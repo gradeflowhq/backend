@@ -1,0 +1,46 @@
+[project]
+name = "gradeflow-backend"
+version = "0.1.0"
+description = "GradeFlow FastAPI backend"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi~=0.121",
+  "uvicorn~=0.38",
+  "sqlalchemy~=2.0",
+  "pydantic~=2.12",
+  "pyjwt~=2.10",
+  "argon2-cffi~=25.1",
+  "python-multipart~=0.0.20",
+  "email-validator~=2.3",
+  "gradeflow-engine @ git+https://github.com/gradeflowhq/engine",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=9.0",
+  "pytest-cov>=7.0",
+  "mypy>=1.18",
+  "ruff>=0.14",
+  "httpx>=0.28",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.11"
+check_untyped_defs = true
+disallow_untyped_defs = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+warn_return_any = true
+no_implicit_optional = true
+strict_optional = true
+plugins = []
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E","F","I","UP","B","ANN"]
+ignore = ["B008"]

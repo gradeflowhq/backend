@@ -1,0 +1,409 @@
+from __future__ import annotations
+
+from typing import TypeAlias
+
+from fastapi.testclient import TestClient
+from httpx import Response
+
+from gradeflow_backend.schemas.assessments import (
+    AssessmentResponse,
+    AssessmentsListResponse,
+)
+from gradeflow_backend.schemas.auth import MeResponse, TokenPairResponse
+from gradeflow_backend.schemas.grading import GradingExportResponse, GradingResponse
+from gradeflow_backend.schemas.memberships import MembershipResponse
+from gradeflow_backend.schemas.question_sets import (
+    ParseSubmissionsResponse,
+    QuestionSetResponse,
+)
+from gradeflow_backend.schemas.roles import Role
+from gradeflow_backend.schemas.rubrics import RubricResponse, ValidateRubricResponse
+from gradeflow_backend.schemas.submissions import SubmissionsResponse
+from gradeflow_backend.schemas.users import AssessmentUsersResponse
+
+Headers: TypeAlias = dict[str, str]
+
+
+class ApiClient:
+    def __init__(self, client: TestClient) -> None:
+        self.client: TestClient = client
+        self._auth_header: Headers = {}
+
+    def set_access_token(self, access_token: str) -> None:
+        self._auth_header = {"Authorization": f"Bearer {access_token}"}
+
+    # -----------------
+    # Auth (try-variants)
+    # -----------------
+
+    def try_signup(self, email: str, password: str, name: str | None = None) -> Response:
+        return self.client.post(
+            "/auth/signup",
+            json={"email": email, "password": password, "name": name},
+        )
+
+    def try_token(self, email: str, password: str) -> Response:
+        return self.client.post(
+            "/auth/token",
+            data={"username": email, "password": password},
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+
+    def try_me(self) -> Response:
+        return self.client.get("/auth/me", headers=self._auth_header)
+
+    # Auth (success-path delegates to try_)
+
+    def signup(self, email: str, password: str, name: str | None = None) -> TokenPairResponse:
+        r = self.try_signup(email=email, password=password, name=name)
+        assert r.status_code == 201, r.text
+        return TokenPairResponse.model_validate(r.json())
+
+    def token(self, email: str, password: str) -> TokenPairResponse:
+        r = self.try_token(email=email, password=password)
+        assert r.status_code == 200, r.text
+        return TokenPairResponse.model_validate(r.json())
+
+    def me(self) -> MeResponse:
+        r = self.try_me()
+        assert r.status_code == 200, r.text
+        return MeResponse.model_validate(r.json())
+
+    # -----------------
+    # Assessments (try-variants)
+    # -----------------
+
+    def try_create_assessment(self, id: str, name: str, description: str | None = None) -> Response:
+        return self.client.post(
+            "/assessments",
+            json={"id": id, "name": name, "description": description},
+            headers=self._auth_header,
+        )
+
+    def try_list_assessments(self) -> Response:
+        return self.client.get("/assessments", headers=self._auth_header)
+
+    def try_get_assessment(self, id: str) -> Response:
+        return self.client.get(f"/assessments/{id}", headers=self._auth_header)
+
+    def try_update_assessment(
+        self,
+        id: str,
+        name: str | None = None,
+        description: str | None = None,
+    ) -> Response:
+        return self.client.patch(
+            f"/assessments/{id}",
+            json={"name": name, "description": description},
+            headers=self._auth_header,
+        )
+
+    def try_delete_assessment(self, id: str) -> Response:
+        return self.client.delete(f"/assessments/{id}", headers=self._auth_header)
+
+    # Assessments (success-path delegates to try_)
+
+    def create_assessment(
+        self, id: str, name: str, description: str | None = None
+    ) -> AssessmentResponse:
+        r = self.try_create_assessment(id=id, name=name, description=description)
+        assert r.status_code == 201, r.text
+        return AssessmentResponse.model_validate(r.json())
+
+    def list_assessments(self) -> AssessmentsListResponse:
+        r = self.try_list_assessments()
+        assert r.status_code == 200, r.text
+        return AssessmentsListResponse.model_validate(r.json())
+
+    def get_assessment(self, id: str) -> AssessmentResponse:
+        r = self.try_get_assessment(id=id)
+        assert r.status_code == 200, r.text
+        return AssessmentResponse.model_validate(r.json())
+
+    def update_assessment(
+        self,
+        id: str,
+        name: str | None = None,
+        description: str | None = None,
+    ) -> AssessmentResponse:
+        r = self.try_update_assessment(id=id, name=name, description=description)
+        assert r.status_code == 200, r.text
+        return AssessmentResponse.model_validate(r.json())
+
+    def delete_assessment(self, id: str) -> None:
+        r = self.try_delete_assessment(id=id)
+        assert r.status_code == 204, r.text
+
+    # -----------------
+    # Question sets (try-variants)
+    # -----------------
+
+    def try_set_question_set_yaml(self, assessment_id: str, yaml_str: str) -> Response:
+        return self.client.put(
+            f"/assessments/{assessment_id}/question-set/load",
+            json={"data": yaml_str, "loader_name": "YAML"},
+            headers=self._auth_header,
+        )
+
+    def try_get_question_set(self, assessment_id: str) -> Response:
+        return self.client.get(
+            f"/assessments/{assessment_id}/question-set",
+            headers=self._auth_header,
+        )
+
+    def try_delete_question_set(self, assessment_id: str) -> Response:
+        return self.client.delete(
+            f"/assessments/{assessment_id}/question-set",
+            headers=self._auth_header,
+        )
+
+    def try_parse_submissions(self, assessment_id: str) -> Response:
+        return self.client.post(
+            f"/assessments/{assessment_id}/question-set/parse",
+            json={},
+            headers=self._auth_header,
+        )
+
+    # Question sets (success-path delegates to try_)
+
+    def set_question_set_yaml(self, assessment_id: str, yaml_str: str) -> QuestionSetResponse:
+        r = self.try_set_question_set_yaml(assessment_id=assessment_id, yaml_str=yaml_str)
+        assert r.status_code == 200, r.text
+        return QuestionSetResponse.model_validate(r.json())
+
+    def get_question_set(self, assessment_id: str) -> QuestionSetResponse:
+        r = self.try_get_question_set(assessment_id=assessment_id)
+        assert r.status_code == 200, r.text
+        return QuestionSetResponse.model_validate(r.json())
+
+    def delete_question_set(self, assessment_id: str) -> None:
+        r = self.try_delete_question_set(assessment_id=assessment_id)
+        assert r.status_code == 204, r.text
+
+    def parse_submissions(self, assessment_id: str) -> ParseSubmissionsResponse:
+        r = self.try_parse_submissions(assessment_id=assessment_id)
+        assert r.status_code == 200, r.text
+        return ParseSubmissionsResponse.model_validate(r.json())
+
+    # -----------------
+    # Rubrics (try-variants)
+    # -----------------
+
+    def try_set_rubric_yaml(self, assessment_id: str, yaml_str: str) -> Response:
+        return self.client.put(
+            f"/assessments/{assessment_id}/rubric/load",
+            json={"data": yaml_str, "loader_name": "YAML"},
+            headers=self._auth_header,
+        )
+
+    def try_get_rubric(self, assessment_id: str) -> Response:
+        return self.client.get(
+            f"/assessments/{assessment_id}/rubric",
+            headers=self._auth_header,
+        )
+
+    def try_validate_rubric(self, assessment_id: str) -> Response:
+        return self.client.post(
+            f"/assessments/{assessment_id}/rubric/validate",
+            json={},
+            headers=self._auth_header,
+        )
+
+    def try_delete_rubric(self, assessment_id: str) -> Response:
+        return self.client.delete(
+            f"/assessments/{assessment_id}/rubric",
+            headers=self._auth_header,
+        )
+
+    # Rubrics (success-path delegates to try_)
+
+    def set_rubric_yaml(self, assessment_id: str, yaml_str: str) -> RubricResponse:
+        r = self.try_set_rubric_yaml(assessment_id=assessment_id, yaml_str=yaml_str)
+        assert r.status_code == 200, r.text
+        return RubricResponse.model_validate(r.json())
+
+    def get_rubric(self, assessment_id: str) -> RubricResponse:
+        r = self.try_get_rubric(assessment_id=assessment_id)
+        assert r.status_code == 200, r.text
+        return RubricResponse.model_validate(r.json())
+
+    def validate_rubric(self, assessment_id: str) -> ValidateRubricResponse:
+        r = self.try_validate_rubric(assessment_id=assessment_id)
+        assert r.status_code in (200, 422), r.text
+        return (
+            ValidateRubricResponse.model_validate(r.json())
+            if r.status_code == 200
+            else ValidateRubricResponse(errors=[])
+        )
+
+    def delete_rubric(self, assessment_id: str) -> None:
+        r = self.try_delete_rubric(assessment_id=assessment_id)
+        assert r.status_code == 204, r.text
+
+    # -----------------
+    # Submissions (try-variants)
+    # -----------------
+
+    def try_set_submissions_csv(self, assessment_id: str, csv_str: str) -> Response:
+        return self.client.put(
+            f"/assessments/{assessment_id}/submissions/load",
+            json={"data": csv_str, "loader_name": "CSV"},
+            headers=self._auth_header,
+        )
+
+    def try_get_submissions(self, assessment_id: str) -> Response:
+        return self.client.get(
+            f"/assessments/{assessment_id}/submissions",
+            headers=self._auth_header,
+        )
+
+    def try_delete_submissions(self, assessment_id: str) -> Response:
+        return self.client.delete(
+            f"/assessments/{assessment_id}/submissions",
+            headers=self._auth_header,
+        )
+
+    # Submissions (success-path delegates to try_)
+
+    def set_submissions_csv(self, assessment_id: str, csv_str: str) -> SubmissionsResponse:
+        r = self.try_set_submissions_csv(assessment_id=assessment_id, csv_str=csv_str)
+        assert r.status_code == 200, r.text
+        return SubmissionsResponse.model_validate(r.json())
+
+    def get_submissions(self, assessment_id: str) -> SubmissionsResponse:
+        r = self.try_get_submissions(assessment_id=assessment_id)
+        assert r.status_code == 200, r.text
+        return SubmissionsResponse.model_validate(r.json())
+
+    def delete_submissions(self, assessment_id: str) -> None:
+        r = self.try_delete_submissions(assessment_id=assessment_id)
+        assert r.status_code == 204, r.text
+
+    # -----------------
+    # Grading (try-variants)
+    # -----------------
+
+    def try_run_grading(self, assessment_id: str) -> Response:
+        return self.client.post(
+            f"/assessments/{assessment_id}/grading/run",
+            json={},
+            headers=self._auth_header,
+        )
+
+    def try_get_grading(self, assessment_id: str) -> Response:
+        return self.client.get(
+            f"/assessments/{assessment_id}/grading",
+            headers=self._auth_header,
+        )
+
+    def try_export_grading(self, assessment_id: str) -> Response:
+        return self.client.post(
+            f"/assessments/{assessment_id}/grading/export",
+            json={"saver_name": "CSV"},
+            headers=self._auth_header,
+        )
+
+    def try_delete_grading(self, assessment_id: str) -> Response:
+        return self.client.delete(
+            f"/assessments/{assessment_id}/grading",
+            headers=self._auth_header,
+        )
+
+    # Grading (success-path delegates to try_)
+
+    def run_grading(self, assessment_id: str) -> GradingResponse:
+        r = self.try_run_grading(assessment_id=assessment_id)
+        assert r.status_code in (200, 422), r.text
+        return (
+            GradingResponse.model_validate(r.json())
+            if r.status_code == 200
+            else GradingResponse(graded_submissions=[])
+        )
+
+    def get_grading(self, assessment_id: str) -> GradingResponse:
+        r = self.try_get_grading(assessment_id=assessment_id)
+        assert r.status_code == 200, r.text
+        return GradingResponse.model_validate(r.json())
+
+    def export_grading(self, assessment_id: str) -> GradingExportResponse:
+        r = self.try_export_grading(assessment_id=assessment_id)
+        assert r.status_code == 200, r.text
+        return GradingExportResponse.model_validate(r.json())
+
+    def delete_grading(self, assessment_id: str) -> None:
+        r = self.try_delete_grading(assessment_id=assessment_id)
+        assert r.status_code == 204, r.text
+
+    # -----------------
+    # Memberships (try-variants)
+    # -----------------
+
+    def try_list_members(self, assessment_id: str) -> Response:
+        return self.client.get(
+            f"/assessments/{assessment_id}/members",
+            headers=self._auth_header,
+        )
+
+    def try_add_member(
+        self,
+        assessment_id: str,
+        user_id: str,
+        role: Role | None = None,
+    ) -> Response:
+        payload: dict[str, object] = {"user_id": user_id}
+        if role is not None:
+            payload["role"] = role
+        return self.client.post(
+            f"/assessments/{assessment_id}/members",
+            json=payload,
+            headers=self._auth_header,
+        )
+
+    def try_set_member_role(
+        self,
+        assessment_id: str,
+        user_id: str,
+        role: Role,
+    ) -> Response:
+        return self.client.patch(
+            f"/assessments/{assessment_id}/members/{user_id}",
+            json={"role": role},
+            headers=self._auth_header,
+        )
+
+    def try_remove_member(self, assessment_id: str, user_id: str) -> Response:
+        return self.client.delete(
+            f"/assessments/{assessment_id}/members/{user_id}",
+            headers=self._auth_header,
+        )
+
+    # Memberships (success-path delegates to try_)
+
+    def list_members(self, assessment_id: str) -> AssessmentUsersResponse:
+        r = self.try_list_members(assessment_id)
+        assert r.status_code == 200, r.text
+        return AssessmentUsersResponse.model_validate(r.json())
+
+    def add_member(
+        self,
+        assessment_id: str,
+        user_id: str,
+        role: Role | None = None,
+    ) -> MembershipResponse:
+        r = self.try_add_member(assessment_id, user_id=user_id, role=role)
+        assert r.status_code == 201, r.text
+        return MembershipResponse.model_validate(r.json())
+
+    def set_member_role(
+        self,
+        assessment_id: str,
+        user_id: str,
+        role: Role,
+    ) -> MembershipResponse:
+        r = self.try_set_member_role(assessment_id, user_id=user_id, role=role)
+        assert r.status_code == 200, r.text
+        return MembershipResponse.model_validate(r.json())
+
+    def remove_member(self, assessment_id: str, user_id: str) -> None:
+        r = self.try_remove_member(assessment_id, user_id=user_id)
+        assert r.status_code == 204, r.text

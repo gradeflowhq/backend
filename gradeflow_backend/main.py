@@ -1,0 +1,71 @@
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
+import gradeflow_engine as gradeflow_engine
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+
+from gradeflow_backend.db import init_db
+from gradeflow_backend.routers import (
+    assessments,
+    auth,
+    grading,
+    health,
+    memberships,
+    question_sets,
+    registry,
+    rubrics,
+    submissions,
+)
+from gradeflow_backend.schemas.errors import ErrorResponse
+from gradeflow_backend.services.exceptions import (
+    BadRequestError,
+    NotFoundError,
+    RubricValidationError,
+)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    init_db()
+    yield
+
+
+app = FastAPI(
+    title="GradeFlow API",
+    version="0.1.0",
+    description="Thin FastAPI wrapper over GradeFlow Engine",
+    lifespan=lifespan,
+)
+
+
+# Global exception handlers to return typed error payloads
+@app.exception_handler(NotFoundError)
+async def not_found_handler(_: Request, exc: NotFoundError) -> JSONResponse:
+    payload = ErrorResponse(errors=[exc.message]).model_dump()
+    return JSONResponse(status_code=404, content=payload)
+
+
+@app.exception_handler(BadRequestError)
+async def bad_request_handler(_: Request, exc: BadRequestError) -> JSONResponse:
+    payload = ErrorResponse(errors=[exc.message]).model_dump()
+    return JSONResponse(status_code=400, content=payload)
+
+
+@app.exception_handler(RubricValidationError)
+async def rubric_validation_handler(_: Request, exc: RubricValidationError) -> JSONResponse:
+    messages = [str(e) for e in exc.errors]  # normalize to strings
+    payload = ErrorResponse(errors=messages).model_dump()
+    return JSONResponse(status_code=422, content=payload)
+
+
+# Include routers
+app.include_router(health.router)
+app.include_router(registry.router)
+app.include_router(assessments.router)
+app.include_router(submissions.router)
+app.include_router(question_sets.router)
+app.include_router(rubrics.router)
+app.include_router(grading.router)
+app.include_router(auth.router)
+app.include_router(memberships.router)

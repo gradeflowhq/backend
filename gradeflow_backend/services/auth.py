@@ -1,0 +1,116 @@
+import uuid
+from datetime import UTC, datetime
+
+from sqlalchemy.exc import NoResultFound
+
+from gradeflow_backend.repositories.tokens import RefreshTokenRepository
+from gradeflow_backend.repositories.users import UserRepository
+from gradeflow_backend.schemas.auth import (
+    LoginRequest,
+    MeResponse,
+    RefreshRequest,
+    SignupRequest,
+    TokenPairResponse,
+)
+from gradeflow_backend.security.jwt import (
+    JwtError,
+    assert_token_type,
+    create_access_token,
+    create_refresh_token,
+    decode_token,
+)
+from gradeflow_backend.security.passwords import (
+    hash_password,
+    needs_rehash,
+    verify_password,
+)
+from gradeflow_backend.services.exceptions import BadRequestError, NotFoundError
+
+
+class AuthService:
+    def __init__(self, users: UserRepository, tokens: RefreshTokenRepository) -> None:
+        self.users = users
+        self.tokens = tokens
+
+    def _now(self) -> datetime:
+        return datetime.now(UTC)
+
+    def signup(self, req: SignupRequest) -> TokenPairResponse:
+        if self.users.get_by_email(req.email):
+            raise BadRequestError("Email already registered")
+        user_id = uuid.uuid4().hex
+        pwd_hash = hash_password(req.password)
+        u = self.users.create(user_id, req.email, req.name, pwd_hash)
+
+        # Issue tokens
+        access = create_access_token(sub=u.id)
+        refresh = create_refresh_token(sub=u.id)
+        # Persist refresh token jti with expiry
+        payload = decode_token(refresh)
+        assert_token_type(payload, "refresh")
+        jti = str(payload["jti"])
+        exp_ts = int(payload["exp"])
+        expires_at = datetime.fromtimestamp(exp_ts, tz=UTC)
+        self.tokens.create(jti=jti, user_id=u.id, expires_at=expires_at)
+
+        return TokenPairResponse(access_token=access, refresh_token=refresh)
+
+    def login(self, req: LoginRequest) -> TokenPairResponse:
+        u = self.users.get_by_email(req.email)
+        if not u or not verify_password(req.password, u.password_hash):
+            raise BadRequestError("Invalid credentials")
+        # Optional: rehash if needed
+        if needs_rehash(u.password_hash):
+            u.password_hash = hash_password(req.password)
+
+        access = create_access_token(sub=u.id)
+        refresh = create_refresh_token(sub=u.id)
+        payload = decode_token(refresh)
+        assert_token_type(payload, "refresh")
+        jti = str(payload["jti"])
+        exp_ts = int(payload["exp"])
+        expires_at = datetime.fromtimestamp(exp_ts, tz=UTC)
+        self.tokens.create(jti=jti, user_id=u.id, expires_at=expires_at)
+
+        return TokenPairResponse(access_token=access, refresh_token=refresh)
+
+    def refresh(self, req: RefreshRequest) -> TokenPairResponse:
+        try:
+            payload = decode_token(req.refresh_token)
+            assert_token_type(payload, "refresh")
+        except JwtError as e:
+            raise BadRequestError("Invalid refresh token") from e
+
+        user_id = str(payload.get("sub") or "")
+        jti = str(payload.get("jti") or "")
+        if not user_id or not jti:
+            raise BadRequestError("Invalid refresh token")
+
+        # Check stored token validity and revoke it (rotation)
+        now = self._now()
+        if not self.tokens.is_valid(jti, now):
+            raise BadRequestError("Refresh token expired or revoked")
+        self.tokens.revoke(jti)
+
+        # Issue new pair
+        access = create_access_token(sub=user_id)
+        refresh = create_refresh_token(sub=user_id)
+        new_payload = decode_token(refresh)
+        assert_token_type(new_payload, "refresh")
+        new_jti = str(new_payload["jti"])
+        exp_ts = int(new_payload["exp"])
+        expires_at = datetime.fromtimestamp(exp_ts, tz=UTC)
+        self.tokens.create(jti=new_jti, user_id=user_id, expires_at=expires_at)
+
+        return TokenPairResponse(access_token=access, refresh_token=refresh)
+
+    def logout(self, user_id: str) -> None:
+        # Revoke all refresh tokens for the user
+        self.tokens.delete_user_tokens(user_id)
+
+    def me(self, user_id: str) -> MeResponse:
+        try:
+            u = self.users.get(user_id)
+        except NoResultFound as e:
+            raise NotFoundError("User not found") from e
+        return MeResponse(id=u.id, email=u.email, name=u.name)

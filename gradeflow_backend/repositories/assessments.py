@@ -66,8 +66,8 @@ class AssessmentRepository(BaseRepository):
 
     def set_graded_json(self, id: str, json_str: str | None) -> None:
         a = self.get(id)
-        a.graded_json = json_str
+        a.graded_submissions_json = json_str
         self.session().flush()
 
     def get_graded_json(self, id: str) -> str | None:
-        return self.get(id).graded_json
+        return self.get(id).graded_submissions_json

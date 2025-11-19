@@ -5,6 +5,7 @@ from gradeflow_backend.db import get_session
 from gradeflow_backend.dependencies.memberships import member_guard_factory, role_guard_factory
 from gradeflow_backend.repositories.assessments import AssessmentRepository
 from gradeflow_backend.schemas.grading import (
+    GradeAdjustmentRequest,
     GradingExportRequest,
     GradingExportResponse,
     GradingResponse,
@@ -36,6 +37,16 @@ def run_grading(
     _u: str = Depends(role_guard_factory("editor")),
 ) -> GradingResponse:
     return svc.run(assessment_id, req)
+
+
+@router.post("/adjust", response_model=GradingResponse, status_code=status.HTTP_200_OK)
+def adjust_grading(
+    assessment_id: str,
+    req: GradeAdjustmentRequest,
+    svc: GradingService = Depends(get_service),
+    _u: str = Depends(role_guard_factory("editor")),
+) -> GradingResponse:
+    return svc.adjust(assessment_id, req)
 
 
 @router.post("/export", response_model=GradingExportResponse, status_code=status.HTTP_200_OK)

@@ -24,7 +24,7 @@ class Assessment(Base):
     question_set_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     rubric_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     submissions_json: Mapped[str | None] = mapped_column(Text, nullable=True)
-    graded_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    graded_submissions_json: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

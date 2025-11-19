@@ -73,10 +73,10 @@ class ApiClient:
     # Assessments (try-variants)
     # -----------------
 
-    def try_create_assessment(self, id: str, name: str, description: str | None = None) -> Response:
+    def try_create_assessment(self, name: str, description: str | None = None) -> Response:
         return self.client.post(
             "/assessments",
-            json={"id": id, "name": name, "description": description},
+            json={"name": name, "description": description},
             headers=self._auth_header,
         )
 
@@ -103,10 +103,8 @@ class ApiClient:
 
     # Assessments (success-path delegates to try_)
 
-    def create_assessment(
-        self, id: str, name: str, description: str | None = None
-    ) -> AssessmentResponse:
-        r = self.try_create_assessment(id=id, name=name, description=description)
+    def create_assessment(self, name: str, description: str | None = None) -> AssessmentResponse:
+        r = self.try_create_assessment(name=name, description=description)
         assert r.status_code == 201, r.text
         return AssessmentResponse.model_validate(r.json())
 

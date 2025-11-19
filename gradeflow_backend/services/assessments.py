@@ -16,7 +16,7 @@ class AssessmentService:
         self.memberships = memberships
 
     def create(self, req: AssessmentCreateRequest, creator_user_id: str) -> AssessmentResponse:
-        a = self.repo.create(req.id, req.name, req.description)
+        a = self.repo.create(req.name, req.description)
         # Assign creator as owner
         self.memberships.add_member(creator_user_id, a.id, role="owner")
         # Build response

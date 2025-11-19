@@ -1,3 +1,5 @@
+import uuid
+
 from sqlalchemy.exc import NoResultFound
 
 from gradeflow_backend.models import Assessment
@@ -7,8 +9,9 @@ from .base import BaseRepository
 
 class AssessmentRepository(BaseRepository):
     # CRUD
-    def create(self, id: str, name: str, description: str | None) -> Assessment:
-        a = Assessment(id=id, name=name, description=description)
+    def create(self, name: str, description: str | None) -> Assessment:
+        _id = uuid.uuid4().hex
+        a = Assessment(id=_id, name=name, description=description)
         self.session().add(a)
         self.session().flush()
         return a

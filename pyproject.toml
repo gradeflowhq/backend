@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "GradeFlow FastAPI backend"
 requires-python = ">=3.11"
 dependencies = [
-  "fastapi~=0.121",
+  "fastapi[standard]~=0.121",
   "uvicorn~=0.38",
   "sqlalchemy~=2.0",
   "pydantic~=2.12",

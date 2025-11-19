@@ -1,6 +1,3 @@
-# A stable assessment ID used across tests
-ASSESSMENT_ID: str = "cs1-midterm"
-
 # QuestionSet YAML must conform to gradeflow_engine.question_sets.model.QuestionSet:
 # - Top-level key: question_map
 # - Each entry: <QuestionId>: { type: <TEXT|NUMERIC|CHOICE|MULTI_VALUED>, ... }

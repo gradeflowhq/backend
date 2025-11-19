@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import yaml
+
 from tests.helpers.api import ApiClient
 from tests.helpers.data import QUESTION_SET_YAML, RUBRIC_YAML
 
@@ -26,3 +28,48 @@ def test_rubric_set_get_validate_delete(api: ApiClient) -> None:
     # Getting now should 404
     resp = api.try_get_rubric(created.id)
     assert resp.status_code == 404, resp.text
+
+
+def test_rubric_coverage_stored(api: ApiClient) -> None:
+    """
+    Coverage using stored QuestionSet and Rubric.
+    QUESTION_SET_YAML has q1 (TEXT) and q2 (NUMERIC).
+    RUBRIC_YAML targets q1 and q2.
+    Expect total=2, covered=2, percentage=1.0.
+    """
+    created = api.create_assessment("Midterm Coverage Stored")
+    api.set_question_set_yaml(created.id, QUESTION_SET_YAML)
+    api.set_rubric_yaml(created.id, RUBRIC_YAML)
+
+    cov = api.rubric_coverage(assessment_id=created.id).coverage
+
+    assert cov.total == 2
+    assert cov.covered == 2
+    assert cov.percentage == 1.0
+    assert set(cov.question_ids) == {"q1", "q2"}
+    assert set(cov.covered_question_ids) == {"q1", "q2"}
+
+
+def test_rubric_coverage_inline(api: ApiClient) -> None:
+    """
+    Coverage using inline QuestionSet and Rubric payloads (not stored).
+    Provide the same YAMLs inline and expect full coverage.
+    """
+    created = api.create_assessment("Midterm Coverage Inline")
+
+    qset_dict = yaml.safe_load(QUESTION_SET_YAML)
+    rubric_dict = yaml.safe_load(RUBRIC_YAML)
+
+    cov = api.rubric_coverage(
+        assessment_id=created.id,
+        use_stored_rubric=False,
+        use_stored_question_set=False,
+        rubric=rubric_dict,
+        question_set=qset_dict,
+    ).coverage
+
+    assert cov.total == 2
+    assert cov.covered == 2
+    assert cov.percentage == 1.0
+    assert set(cov.question_ids) == {"q1", "q2"}
+    assert set(cov.covered_question_ids) == {"q1", "q2"}

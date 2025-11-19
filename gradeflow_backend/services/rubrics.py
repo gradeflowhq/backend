@@ -5,6 +5,8 @@ from sqlalchemy.exc import NoResultFound
 
 from gradeflow_backend.repositories.assessments import AssessmentRepository
 from gradeflow_backend.schemas.rubrics import (
+    CoverageRequest,
+    CoverageResponse,
     RubricResponse,
     SetRubricByDataRequest,
     SetRubricByModelRequest,
@@ -79,3 +81,34 @@ class RubricService:
 
         errors = rubric.validate_rubric(qset)
         return ValidateRubricResponse(errors=errors)
+
+    def coverage(self, assessment_id: str, req: CoverageRequest) -> CoverageResponse:
+        try:
+            a = self.repo.get(assessment_id)
+        except NoResultFound as e:
+            raise NotFoundError("Assessment not found") from e
+
+        if req.use_stored_rubric:
+            rubric_json = a.rubric_json
+            if not rubric_json:
+                raise NotFoundError("Rubric not set")
+            rubric = Rubric.model_validate_json(rubric_json)
+        else:
+            if req.rubric is None:
+                raise BadRequestError("rubric must be provided when use_stored_rubric=false")
+            rubric = req.rubric
+
+        if req.use_stored_question_set:
+            qset_json = a.question_set_json
+            if not qset_json:
+                raise NotFoundError("Question set not set")
+            qset = QuestionSet.model_validate_json(qset_json)
+        else:
+            if req.question_set is None:
+                raise BadRequestError(
+                    "question_set must be provided when use_stored_question_set=false"
+                )
+            qset = req.question_set
+
+        cov = rubric.get_coverage(qset)
+        return CoverageResponse(coverage=cov)

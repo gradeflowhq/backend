@@ -5,6 +5,8 @@ from gradeflow_backend.db import get_session
 from gradeflow_backend.dependencies.memberships import member_guard_factory, role_guard_factory
 from gradeflow_backend.repositories.assessments import AssessmentRepository
 from gradeflow_backend.schemas.rubrics import (
+    CoverageRequest,
+    CoverageResponse,
     RubricResponse,
     SetRubricByDataRequest,
     SetRubricByModelRequest,
@@ -57,6 +59,16 @@ def validate_rubric(
     _u: str = Depends(member_guard_factory()),
 ) -> ValidateRubricResponse:
     return svc.validate(assessment_id, req)
+
+
+@router.post("/coverage", response_model=CoverageResponse, status_code=status.HTTP_200_OK)
+def rubric_coverage(
+    assessment_id: str,
+    req: CoverageRequest,
+    svc: RubricService = Depends(get_service),
+    _u: str = Depends(member_guard_factory()),
+) -> CoverageResponse:
+    return svc.coverage(assessment_id, req)
 
 
 @router.delete("", status_code=status.HTTP_204_NO_CONTENT)

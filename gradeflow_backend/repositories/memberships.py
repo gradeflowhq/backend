@@ -66,3 +66,17 @@ class MembershipRepository(BaseRepository):
         if not u:
             raise NoResultFound("User not found")
         return list(u.assessments)
+
+    def list_assessment_members_with_roles(self, assessment_id: str) -> list[tuple[User, Role]]:
+        q = (
+            self.session()
+            .query(UserAssessment, User)
+            .join(User, User.id == UserAssessment.user_id)
+            .filter(UserAssessment.assessment_id == assessment_id)
+            .all()
+        )
+        result: list[tuple[User, Role]] = []
+        for link, user in q:
+            role_str = link.role if link.role in {"owner", "editor", "viewer"} else "viewer"
+            result.append((user, cast(Role, role_str)))
+        return result

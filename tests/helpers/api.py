@@ -445,10 +445,10 @@ class ApiClient:
     def try_add_member(
         self,
         assessment_id: str,
-        user_id: str,
+        user_email: str,
         role: Role | None = None,
     ) -> Response:
-        payload: dict[str, object] = {"user_id": user_id}
+        payload: dict[str, object] = {"user_email": user_email}
         if role is not None:
             payload["role"] = role
         return self.client.post(
@@ -485,10 +485,10 @@ class ApiClient:
     def add_member(
         self,
         assessment_id: str,
-        user_id: str,
+        user_email: str,
         role: Role | None = None,
     ) -> MembershipResponse:
-        r = self.try_add_member(assessment_id, user_id=user_id, role=role)
+        r = self.try_add_member(assessment_id, user_email=user_email, role=role)
         assert r.status_code == 201, r.text
         return MembershipResponse.model_validate(r.json())
 

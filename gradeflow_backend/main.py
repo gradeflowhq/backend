@@ -5,8 +5,10 @@ import gradeflow_engine as gradeflow_engine
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from pydantic import ValidationError
 
 from gradeflow_backend.db import init_db
+from gradeflow_backend.openapi import patch_openapi_union_format
 from gradeflow_backend.routers import (
     assessments,
     auth,
@@ -71,6 +73,13 @@ async def rubric_validation_handler(_: Request, exc: RubricValidationError) -> J
     return JSONResponse(status_code=422, content=payload)
 
 
+@app.exception_handler(ValidationError)
+async def pydantic_validation_handler(_: Request, exc: ValidationError) -> JSONResponse:
+    messages = [e["msg"] for e in exc.errors()]  # extract error messages
+    payload = ErrorResponse(errors=messages).model_dump()
+    return JSONResponse(status_code=422, content=payload)
+
+
 # Include routers
 app.include_router(health.router)
 app.include_router(registry.router)
@@ -81,3 +90,7 @@ app.include_router(rubrics.router)
 app.include_router(grading.router)
 app.include_router(auth.router)
 app.include_router(memberships.router)
+
+
+# Install OpenAPI patcher
+patch_openapi_union_format(app)

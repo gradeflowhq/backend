@@ -9,6 +9,12 @@ question_map:
   q2:
     type: NUMERIC
     description: "Score?"
+  q3:
+    type: CHOICE
+    description: "Score?"
+  q4:
+    type: MULTI_VALUED
+    description: "Score?"
 """
 
 # Rubric YAML must conform to gradeflow_engine.rubrics.model.Rubric:
@@ -28,7 +34,23 @@ rules:
     min_value: 0
     max_value: 100
     max_points: 2.0
+  - type: MULTIPLE_CHOICE
+    question_id: q3
+    answer:
+      - A
+    max_points: 1.5
+  - type: MULTI_VALUED
+    question_id: q4
+    rules:
+      - type: EXACT_MATCH
+        question_id: q4_1
+        answer: "1"
+      - type: EXACT_MATCH
+        question_id: q4_2
+        answer: "a"
+    aggregation: ALL
+    max_points: 2.0
 """
 
 # Submissions CSV must have a student_id column and columns for each question ID (q1, q2).
-SUBMISSIONS_CSV: str = "student_id,q1,q2\ns1,Alice,90\ns2,Bob,76\n"
+SUBMISSIONS_CSV: str = "student_id,q1,q2,q3,q4\ns1,Alice,90,A,1|a\ns2,Bob,76,B,2|b\n"

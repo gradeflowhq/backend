@@ -1,5 +1,4 @@
-import json
-
+import yaml
 from gradeflow_engine.core import load_submissions
 from gradeflow_engine.submissions.models import RawSubmission
 from sqlalchemy.exc import NoResultFound
@@ -22,7 +21,7 @@ class SubmissionsService:
     ) -> SubmissionsResponse:
         payload = [rs.model_dump() for rs in req.raw_submissions]
         try:
-            self.repo.set_submissions_json(assessment_id, json.dumps(payload))
+            self.repo.set_submissions_yaml(assessment_id, yaml.safe_dump(payload))
         except NoResultFound as e:
             raise NotFoundError("Assessment not found") from e
         return SubmissionsResponse(raw_submissions=req.raw_submissions)
@@ -33,24 +32,24 @@ class SubmissionsService:
         raw = load_submissions(req.data, loader_name=req.loader_name, **(req.loader_kwargs or {}))
         payload = [rs.model_dump() for rs in raw]
         try:
-            self.repo.set_submissions_json(assessment_id, json.dumps(payload))
+            self.repo.set_submissions_yaml(assessment_id, yaml.safe_dump(payload))
         except NoResultFound as e:
             raise NotFoundError("Assessment not found") from e
         return SubmissionsResponse(raw_submissions=raw)
 
     def get(self, assessment_id: str) -> SubmissionsResponse:
         try:
-            json_str = self.repo.get_submissions_json(assessment_id)
+            yaml_str = self.repo.get_submissions_yaml(assessment_id)
         except NoResultFound as e:
             raise NotFoundError("Assessment not found") from e
-        if not json_str:
+        if not yaml_str:
             return SubmissionsResponse(raw_submissions=[])
-        items: list[dict[str, object]] = json.loads(json_str)
+        items: list[dict[str, object]] = yaml.safe_load(yaml_str)
         raw = [RawSubmission.model_validate(obj) for obj in items]
         return SubmissionsResponse(raw_submissions=raw)
 
     def delete(self, assessment_id: str) -> None:
         try:
-            self.repo.set_submissions_json(assessment_id, None)
+            self.repo.set_submissions_yaml(assessment_id, None)
         except NoResultFound as e:
             raise NotFoundError("Assessment not found") from e

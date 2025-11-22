@@ -1,5 +1,4 @@
-import json
-
+import yaml
 from gradeflow_engine.core import infer_question_set, load_question_set
 from gradeflow_engine.question_sets.model import QuestionSet
 from gradeflow_engine.submissions.models import RawSubmission
@@ -25,7 +24,9 @@ class QuestionSetService:
         self, assessment_id: str, req: SetQuestionSetByModelRequest
     ) -> QuestionSetResponse:
         try:
-            self.repo.set_question_set_json(assessment_id, req.question_set.model_dump_json())
+            self.repo.set_question_set_yaml(
+                assessment_id, yaml.safe_dump(req.question_set.model_dump())
+            )
         except NoResultFound as e:
             raise NotFoundError("Assessment not found") from e
         return QuestionSetResponse(question_set=req.question_set)
@@ -35,24 +36,24 @@ class QuestionSetService:
     ) -> QuestionSetResponse:
         qset = load_question_set(req.data, loader_name=req.loader_name)
         try:
-            self.repo.set_question_set_json(assessment_id, qset.model_dump_json())
+            self.repo.set_question_set_yaml(assessment_id, yaml.safe_dump(qset.model_dump()))
         except NoResultFound as e:
             raise NotFoundError("Assessment not found") from e
         return QuestionSetResponse(question_set=qset)
 
     def get(self, assessment_id: str) -> QuestionSetResponse:
         try:
-            json_str = self.repo.get_question_set_json(assessment_id)
+            yaml_str = self.repo.get_question_set_yaml(assessment_id)
         except NoResultFound as e:
             raise NotFoundError("Assessment not found") from e
-        if not json_str:
+        if not yaml_str:
             raise NotFoundError("Question set not set")
-        qset = QuestionSet.model_validate_json(json_str)
+        qset = QuestionSet.model_validate(yaml.safe_load(yaml_str))
         return QuestionSetResponse(question_set=qset)
 
     def delete(self, assessment_id: str) -> None:
         try:
-            self.repo.set_question_set_json(assessment_id, None)
+            self.repo.set_question_set_yaml(assessment_id, None)
         except NoResultFound as e:
             raise NotFoundError("Assessment not found") from e
 
@@ -64,10 +65,10 @@ class QuestionSetService:
 
         raw_subs: list[RawSubmission]
         if req.use_stored_submissions:
-            subs_json = a.submissions_json
-            if not subs_json:
+            subs_yaml = a.submissions_yaml
+            if not subs_yaml:
                 raise NotFoundError("No submissions stored for this assessment")
-            items = json.loads(subs_json)
+            items = yaml.safe_load(subs_yaml)
             raw_subs = [RawSubmission.model_validate(obj) for obj in items]
         else:
             if not req.raw_submissions:
@@ -83,7 +84,7 @@ class QuestionSetService:
             multi_value_delimiter=req.multi_value_delimiter,
         )
         if req.commit:
-            self.repo.set_question_set_json(assessment_id, qset.model_dump_json())
+            self.repo.set_question_set_yaml(assessment_id, yaml.safe_dump(qset.model_dump()))
         return QuestionSetResponse(question_set=qset)
 
     def parse(self, assessment_id: str, req: ParseSubmissionsRequest) -> ParseSubmissionsResponse:
@@ -93,10 +94,10 @@ class QuestionSetService:
             raise NotFoundError("Assessment not found") from e
 
         if req.use_stored_question_set:
-            qset_json = a.question_set_json
-            if not qset_json:
+            qset_yaml = a.question_set_yaml
+            if not qset_yaml:
                 raise NotFoundError("Question set not set")
-            qset = QuestionSet.model_validate_json(qset_json)
+            qset = QuestionSet.model_validate(yaml.safe_load(qset_yaml))
         else:
             if req.question_set is None:
                 raise BadRequestError(
@@ -105,10 +106,10 @@ class QuestionSetService:
             qset = req.question_set
 
         if req.use_stored_submissions:
-            subs_json = a.submissions_json
-            if not subs_json:
+            subs_yaml = a.submissions_yaml
+            if not subs_yaml:
                 raise NotFoundError("Submissions not set")
-            items = json.loads(subs_json)
+            items = yaml.safe_load(subs_yaml)
             raw_subs = [RawSubmission.model_validate(obj) for obj in items]
         else:
             if req.raw_submissions is None:

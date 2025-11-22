@@ -1,3 +1,4 @@
+import yaml
 from gradeflow_engine.core import load_rubric
 from gradeflow_engine.question_sets.model import QuestionSet
 from gradeflow_engine.rubrics.model import Rubric
@@ -14,6 +15,7 @@ from gradeflow_backend.schemas.rubrics import (
     ValidateRubricResponse,
 )
 from gradeflow_backend.services.exceptions import BadRequestError, NotFoundError
+from gradeflow_backend.utils.engine import model_dump_minimal
 
 
 class RubricService:
@@ -22,7 +24,7 @@ class RubricService:
 
     def set_by_model(self, assessment_id: str, req: SetRubricByModelRequest) -> RubricResponse:
         try:
-            self.repo.set_rubric_json(assessment_id, req.rubric.model_dump_json())
+            self.repo.set_rubric_yaml(assessment_id, yaml.safe_dump(model_dump_minimal(req.rubric)))
         except NoResultFound as e:
             raise NotFoundError("Assessment not found") from e
         return RubricResponse(rubric=req.rubric)
@@ -30,24 +32,24 @@ class RubricService:
     def set_by_data(self, assessment_id: str, req: SetRubricByDataRequest) -> RubricResponse:
         rubric = load_rubric(req.data, loader_name=req.loader_name)
         try:
-            self.repo.set_rubric_json(assessment_id, rubric.model_dump_json())
+            self.repo.set_rubric_yaml(assessment_id, yaml.safe_dump(model_dump_minimal(rubric)))
         except NoResultFound as e:
             raise NotFoundError("Assessment not found") from e
         return RubricResponse(rubric=rubric)
 
     def get(self, assessment_id: str) -> RubricResponse:
         try:
-            json_str = self.repo.get_rubric_json(assessment_id)
+            yaml_str = self.repo.get_rubric_yaml(assessment_id)
         except NoResultFound as e:
             raise NotFoundError("Assessment not found") from e
-        if not json_str:
+        if not yaml_str:
             raise NotFoundError("Rubric not set")
-        rubric = Rubric.model_validate_json(json_str)
+        rubric = Rubric.model_validate(yaml.safe_load(yaml_str))
         return RubricResponse(rubric=rubric)
 
     def delete(self, assessment_id: str) -> None:
         try:
-            self.repo.set_rubric_json(assessment_id, None)
+            self.repo.set_rubric_yaml(assessment_id, None)
         except NoResultFound as e:
             raise NotFoundError("Assessment not found") from e
 
@@ -58,20 +60,20 @@ class RubricService:
             raise NotFoundError("Assessment not found") from e
 
         if req.use_stored_rubric:
-            rubric_json = a.rubric_json
-            if not rubric_json:
+            rubric_yaml = a.rubric_yaml
+            if not rubric_yaml:
                 raise NotFoundError("Rubric not set")
-            rubric = Rubric.model_validate_json(rubric_json)
+            rubric = Rubric.model_validate(yaml.safe_load(rubric_yaml))
         else:
             if req.rubric is None:
                 raise BadRequestError("rubric must be provided when use_stored_rubric=false")
             rubric = req.rubric
 
         if req.use_stored_question_set:
-            qset_json = a.question_set_json
-            if not qset_json:
+            qset_yaml = a.question_set_yaml
+            if not qset_yaml:
                 raise NotFoundError("Question set not set")
-            qset = QuestionSet.model_validate_json(qset_json)
+            qset = QuestionSet.model_validate(yaml.safe_load(qset_yaml))
         else:
             if req.question_set is None:
                 raise BadRequestError(
@@ -89,20 +91,20 @@ class RubricService:
             raise NotFoundError("Assessment not found") from e
 
         if req.use_stored_rubric:
-            rubric_json = a.rubric_json
-            if not rubric_json:
+            rubric_yaml = a.rubric_yaml
+            if not rubric_yaml:
                 raise NotFoundError("Rubric not set")
-            rubric = Rubric.model_validate_json(rubric_json)
+            rubric = Rubric.model_validate(yaml.safe_load(rubric_yaml))
         else:
             if req.rubric is None:
                 raise BadRequestError("rubric must be provided when use_stored_rubric=false")
             rubric = req.rubric
 
         if req.use_stored_question_set:
-            qset_json = a.question_set_json
-            if not qset_json:
+            qset_yaml = a.question_set_yaml
+            if not qset_yaml:
                 raise NotFoundError("Question set not set")
-            qset = QuestionSet.model_validate_json(qset_json)
+            qset = QuestionSet.model_validate(yaml.safe_load(qset_yaml))
         else:
             if req.question_set is None:
                 raise BadRequestError(

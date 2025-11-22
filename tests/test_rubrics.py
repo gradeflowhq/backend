@@ -33,9 +33,9 @@ def test_rubric_set_get_validate_delete(api: ApiClient) -> None:
 def test_rubric_coverage_stored(api: ApiClient) -> None:
     """
     Coverage using stored QuestionSet and Rubric.
-    QUESTION_SET_YAML has q1 (TEXT) and q2 (NUMERIC).
-    RUBRIC_YAML targets q1 and q2.
-    Expect total=2, covered=2, percentage=1.0.
+    QUESTION_SET_YAML has q1 (TEXT), q2 (NUMERIC), q3 (CHOICE), q4 (MULTI_VALUED).
+    RUBRIC_YAML targets q1, q2, q3, q4.
+    Expect total=4, covered=4, percentage=1.0.
     """
     created = api.create_assessment("Midterm Coverage Stored")
     api.set_question_set_yaml(created.id, QUESTION_SET_YAML)
@@ -43,11 +43,11 @@ def test_rubric_coverage_stored(api: ApiClient) -> None:
 
     cov = api.rubric_coverage(assessment_id=created.id).coverage
 
-    assert cov.total == 2
-    assert cov.covered == 2
+    assert cov.total == 4
+    assert cov.covered == 4
     assert cov.percentage == 1.0
-    assert set(cov.question_ids) == {"q1", "q2"}
-    assert set(cov.covered_question_ids) == {"q1", "q2"}
+    assert set(cov.question_ids) == {"q1", "q2", "q3", "q4"}
+    assert set(cov.covered_question_ids) == {"q1", "q2", "q3", "q4"}
 
 
 def test_rubric_coverage_inline(api: ApiClient) -> None:
@@ -68,8 +68,8 @@ def test_rubric_coverage_inline(api: ApiClient) -> None:
         question_set=qset_dict,
     ).coverage
 
-    assert cov.total == 2
-    assert cov.covered == 2
+    assert cov.total == 4
+    assert cov.covered == 4
     assert cov.percentage == 1.0
-    assert set(cov.question_ids) == {"q1", "q2"}
-    assert set(cov.covered_question_ids) == {"q1", "q2"}
+    assert set(cov.question_ids) == {"q1", "q2", "q3", "q4"}
+    assert set(cov.covered_question_ids) == {"q1", "q2", "q3", "q4"}

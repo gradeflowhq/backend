@@ -40,34 +40,34 @@ class AssessmentRepository(BaseRepository):
         self.session().flush()
 
     # State setters/getters (JSON blobs)
-    def set_question_set_json(self, id: str, json_str: str | None) -> None:
+    def set_question_set_yaml(self, id: str, yaml_str: str | None) -> None:
         a = self.get(id)
-        a.question_set_json = json_str
+        a.question_set_yaml = yaml_str
         self.session().flush()
 
-    def get_question_set_json(self, id: str) -> str | None:
-        return self.get(id).question_set_json
+    def get_question_set_yaml(self, id: str) -> str | None:
+        return self.get(id).question_set_yaml
 
-    def set_rubric_json(self, id: str, json_str: str | None) -> None:
+    def set_rubric_yaml(self, id: str, yaml_str: str | None) -> None:
         a = self.get(id)
-        a.rubric_json = json_str
+        a.rubric_yaml = yaml_str
         self.session().flush()
 
-    def get_rubric_json(self, id: str) -> str | None:
-        return self.get(id).rubric_json
+    def get_rubric_yaml(self, id: str) -> str | None:
+        return self.get(id).rubric_yaml
 
-    def set_submissions_json(self, id: str, json_str: str | None) -> None:
+    def set_submissions_yaml(self, id: str, yaml_str: str | None) -> None:
         a = self.get(id)
-        a.submissions_json = json_str
+        a.submissions_yaml = yaml_str
         self.session().flush()
 
-    def get_submissions_json(self, id: str) -> str | None:
-        return self.get(id).submissions_json
+    def get_submissions_yaml(self, id: str) -> str | None:
+        return self.get(id).submissions_yaml
 
-    def set_graded_json(self, id: str, json_str: str | None) -> None:
+    def set_graded_yaml(self, id: str, yaml_str: str | None) -> None:
         a = self.get(id)
-        a.graded_submissions_json = json_str
+        a.graded_submissions_yaml = yaml_str
         self.session().flush()
 
-    def get_graded_json(self, id: str) -> str | None:
-        return self.get(id).graded_submissions_json
+    def get_graded_yaml(self, id: str) -> str | None:
+        return self.get(id).graded_submissions_yaml

@@ -128,9 +128,13 @@ class GradingService:
                         f"adjusted_points ({new_points}) exceeds max_points ({target.max_points})"
                     )
                 target.adjusted_points = new_points
+            else:
+                target.adjusted_points = None
             # Set adjusted_feedback if provided
             if adj.adjusted_feedback is not None:
                 target.adjusted_feedback = adj.adjusted_feedback
+            else:
+                target.adjusted_feedback = None
 
         # Persist
         payload = [gs.model_dump() for gs in graded]

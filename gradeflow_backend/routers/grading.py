@@ -8,6 +8,7 @@ from gradeflow_backend.schemas.grading import (
     GradeAdjustmentRequest,
     GradingExportRequest,
     GradingExportResponse,
+    GradingPreviewRequest,
     GradingResponse,
     GradingRunRequest,
 )
@@ -66,3 +67,13 @@ def delete_grading(
     _u: str = Depends(role_guard_factory("editor")),
 ) -> None:
     svc.delete(assessment_id)
+
+
+@router.post("/preview", response_model=GradingResponse, status_code=status.HTTP_200_OK)
+def preview_grading(
+    assessment_id: str,
+    req: GradingPreviewRequest,
+    svc: GradingService = Depends(get_service),
+    _u: str = Depends(member_guard_factory()),
+) -> GradingResponse:
+    return svc.preview(assessment_id, req)

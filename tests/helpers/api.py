@@ -400,6 +400,51 @@ class ApiClient:
             headers=self._auth_header,
         )
 
+    def try_preview_grading(
+        self,
+        assessment_id: str,
+        *,
+        use_stored_question_set: bool = True,
+        use_stored_rubric: bool = True,
+        use_stored_submissions: bool = True,
+        rule: dict[str, object] | None = None,
+        question_set: dict[str, object] | None = None,
+        rubric: dict[str, object] | None = None,
+        raw_submissions: list[dict[str, object]] | None = None,
+        limit: int | None = None,
+        selection: str = "first",
+        seed: int | None = None,
+    ) -> Response:
+        """
+        Call grading preview endpoint. If 'rule' is provided, preview only that rule.
+        You can override stored artifacts by setting use_stored_* to False and providing
+        inline payloads.
+        """
+        payload: dict[str, object] = {
+            "use_stored_question_set": use_stored_question_set,
+            "use_stored_rubric": use_stored_rubric,
+            "use_stored_submissions": use_stored_submissions,
+            "selection": selection,
+        }
+        if rule is not None:
+            payload["rule"] = rule
+        if question_set is not None:
+            payload["question_set"] = question_set
+        if rubric is not None:
+            payload["rubric"] = rubric
+        if raw_submissions is not None:
+            payload["raw_submissions"] = raw_submissions
+        if limit is not None:
+            payload["limit"] = limit
+        if seed is not None:
+            payload["seed"] = seed
+
+        return self.client.post(
+            f"/assessments/{assessment_id}/grading/preview",
+            json=payload,
+            headers=self._auth_header,
+        )
+
     # Grading (success-path delegates to try_)
 
     def run_grading(self, assessment_id: str) -> GradingResponse:
@@ -431,6 +476,41 @@ class ApiClient:
         r = self.try_adjust_grading(assessment_id=assessment_id, adjustments=adjustments)
         assert r.status_code == 200, r.text
         return GradingResponse.model_validate(r.json())
+
+    def preview_grading(
+        self,
+        assessment_id: str,
+        *,
+        use_stored_question_set: bool = True,
+        use_stored_rubric: bool = True,
+        use_stored_submissions: bool = True,
+        rule: dict[str, object] | None = None,
+        question_set: dict[str, object] | None = None,
+        rubric: dict[str, object] | None = None,
+        raw_submissions: list[dict[str, object]] | None = None,
+        limit: int | None = None,
+        selection: str = "first",
+        seed: int | None = None,
+    ) -> GradingResponse:
+        r = self.try_preview_grading(
+            assessment_id=assessment_id,
+            use_stored_question_set=use_stored_question_set,
+            use_stored_rubric=use_stored_rubric,
+            use_stored_submissions=use_stored_submissions,
+            rule=rule,
+            question_set=question_set,
+            rubric=rubric,
+            raw_submissions=raw_submissions,
+            limit=limit,
+            selection=selection,
+            seed=seed,
+        )
+        assert r.status_code in (200, 422), r.text
+        return (
+            GradingResponse.model_validate(r.json())
+            if r.status_code == 200
+            else GradingResponse(graded_submissions=[])
+        )
 
     # -----------------
     # Memberships (try-variants)

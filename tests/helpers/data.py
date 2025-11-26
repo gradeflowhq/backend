@@ -11,10 +11,23 @@ question_map:
     description: "Score?"
   q3:
     type: CHOICE
-    description: "Score?"
+    description: "Select letter"
+    options:
+      - A
+      - B
+      - C
+    allow_multiple: false
+    config:
+      delimiter: ","
+      trim_whitespace: true
+      normalize_case: false
   q4:
     type: MULTI_VALUED
-    description: "Score?"
+    description: "Two-part answer"
+    config:
+      delimiter: "|"
+      trim_whitespace: true
+      normalize_case: false
 """
 
 # Rubric YAML must conform to gradeflow_engine.rubrics.model.Rubric:

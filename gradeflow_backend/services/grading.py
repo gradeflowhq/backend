@@ -1,3 +1,4 @@
+# backend/gradeflow_backend/services/grading.py
 import random
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -19,6 +20,7 @@ from gradeflow_backend.schemas.grading import (
     GradeAdjustmentRequest,
     GradingExportRequest,
     GradingExportResponse,
+    GradingLimitConfig,
     GradingPreviewRequest,
     GradingResponse,
     GradingRunRequest,
@@ -66,44 +68,18 @@ class GradingService:
         items: list[dict[str, object]] = yaml.safe_load(yaml_str)
         return [RawSubmission.model_validate(obj) for obj in items]
 
-    def _resolve_question_set(
-        self, *, stored_yaml: str | None, provided: QuestionSet | None, use_stored: bool
-    ) -> QuestionSet:
-        if use_stored:
-            return self._load_question_set_yaml(stored_yaml)
-        if provided is None:
-            raise BadRequestError(
-                "question_set must be provided when use_stored_question_set=false"
-            )
-        return provided
-
-    def _resolve_rubric(
-        self, *, stored_yaml: str | None, provided: Rubric | None, use_stored: bool
-    ) -> Rubric:
-        if use_stored:
-            return self._load_rubric_yaml(stored_yaml)
-        if provided is None:
-            raise BadRequestError("rubric must be provided when use_stored_rubric=false")
-        return provided
-
-    def _resolve_raw_submissions(
-        self, *, stored_yaml: str | None, provided: list[RawSubmission] | None, use_stored: bool
-    ) -> list[RawSubmission]:
-        if use_stored:
-            return self._load_raw_submissions_yaml(stored_yaml)
-        if provided is None:
-            raise BadRequestError(
-                "raw_submissions must be provided when use_stored_submissions=false"
-            )
-        return provided
-
     def _validate_or_raise(self, rubric: Rubric, qset: QuestionSet) -> None:
         errors = rubric.validate_rubric(qset)
         if errors:
             raise RubricValidationError(errors)
 
     def _limit_raw_submissions(
-        self, subs: list[RawSubmission], *, limit: int | None, selection: str, seed: int | None
+        self,
+        subs: list[RawSubmission],
+        *,
+        limit: int | None,
+        selection: str,
+        seed: int | None,
     ) -> list[RawSubmission]:
         if limit is None:
             return subs
@@ -114,10 +90,11 @@ class GradingService:
             return ordered[: min(limit, len(ordered))]
         if selection == "random":
             rnd = random.Random(seed)
-            if limit >= len(subs):
-                rnd.shuffle(subs)
-                return subs
-            return rnd.sample(subs, k=limit)
+            subs_copy = list(subs)
+            if limit >= len(subs_copy):
+                rnd.shuffle(subs_copy)
+                return subs_copy
+            return rnd.sample(subs_copy, k=limit)
         raise BadRequestError("selection must be 'first' or 'random'")
 
     def _parse_bundle(self, qset: QuestionSet, raw_subs: Sequence[RawSubmission]) -> ParsedBundle:
@@ -144,26 +121,12 @@ class GradingService:
             for gs in graded
         ]
 
-    def _filter_results_to_targets(
-        self,
-        adjustable: list[AdjustableGradedSubmission],
-        target_ids: set[str],
-        *,
-        drop_empty_submissions: bool = True,
+    def _grade_with(
+        self, *, qset: QuestionSet, rubric: Rubric, raw_subs: list[RawSubmission]
     ) -> list[AdjustableGradedSubmission]:
-        filtered: list[AdjustableGradedSubmission] = []
-        for gs in adjustable:
-            kept = [r for r in gs.results if r.question_id in target_ids]
-            if drop_empty_submissions and not kept:
-                continue
-            filtered.append(
-                AdjustableGradedSubmission(
-                    student_id=gs.student_id,
-                    answer_map=gs.answer_map,
-                    results=kept,
-                )
-            )
-        return filtered
+        self._validate_or_raise(rubric, qset)
+        bundle = self._parse_bundle(qset, raw_subs)
+        return self._grade_adjustable(rubric, bundle)
 
     def _persist_graded_yaml(
         self, assessment_id: str, adjustable: list[AdjustableGradedSubmission]
@@ -171,96 +134,64 @@ class GradingService:
         payload = [gs.model_dump() for gs in adjustable]
         self.repo.set_graded_yaml(assessment_id, yaml.safe_dump(payload))
 
-    # ---------------------------
-    # Single internal pipeline (used by both run and preview)
-    # ---------------------------
-
-    def _grade_pipeline(
+    def _grade_assessment(
         self,
         *,
         assessment_id: str,
-        # Artifact sources
-        use_stored_qset: bool,
-        qset_provided: QuestionSet | None,
-        use_stored_rubric: bool,
-        rubric_provided: Rubric | None,
-        use_stored_subs: bool,
-        subs_provided: list[RawSubmission] | None,
-        # Preview/run controls
-        limit: int | None = None,
-        selection: str = "first",
-        seed: int | None = None,
-        single_rule: QuestionRule | None = None,
-        filter_to_target_ids: bool = False,
-        persist_results: bool = False,
+        rule: QuestionRule | None,
+        limit_config: GradingLimitConfig | None,
+        persist: bool,
     ) -> list[AdjustableGradedSubmission]:
+        """
+        Loads stored artifacts for the assessment and performs grading.
+        - If rule is provided, ignores stored rubric and grades with only that rule.
+        - Applies optional limiting via limit_config before grading.
+        - Persists results if persist=True.
+        """
         a = self._get_assessment(assessment_id)
 
-        qset = self._resolve_question_set(
-            stored_yaml=a.question_set_yaml, provided=qset_provided, use_stored=use_stored_qset
-        )
-        raw_subs_all = self._resolve_raw_submissions(
-            stored_yaml=a.submissions_yaml, provided=subs_provided, use_stored=use_stored_subs
-        )
-        raw_subs = self._limit_raw_submissions(
-            raw_subs_all, limit=limit, selection=selection, seed=seed
-        )
+        qset = self._load_question_set_yaml(a.question_set_yaml)
+        raw_subs_all = self._load_raw_submissions_yaml(a.submissions_yaml)
 
-        rubric = (
-            Rubric(rules=[single_rule])
-            if single_rule is not None
-            else self._resolve_rubric(
-                stored_yaml=a.rubric_yaml, provided=rubric_provided, use_stored=use_stored_rubric
+        effective_rubric = Rubric(rules=[rule]) if rule is not None else self._load_rubric_yaml(a.rubric_yaml)
+
+        # Apply optional limiting
+        if limit_config is not None:
+            raw_subs = self._limit_raw_submissions(
+                raw_subs_all,
+                limit=limit_config.limit,
+                selection=limit_config.selection,
+                seed=limit_config.seed,
             )
-        )
+        else:
+            raw_subs = raw_subs_all
 
-        self._validate_or_raise(rubric, qset)
-        bundle = self._parse_bundle(qset, raw_subs)
-        adjustable = self._grade_adjustable(rubric, bundle)
+        adjustable = self._grade_with(qset=qset, rubric=effective_rubric, raw_subs=raw_subs)
 
-        if single_rule is not None and filter_to_target_ids:
-            target_ids = single_rule.get_target_question_ids()
-            adjustable = self._filter_results_to_targets(
-                adjustable, target_ids, drop_empty_submissions=True
-            )
-
-        if persist_results:
+        if persist:
             self._persist_graded_yaml(assessment_id, adjustable)
 
         return adjustable
 
     # ---------------------------
-    # Public methods (thin wrappers)
+    # Public methods
     # ---------------------------
 
     def run(self, assessment_id: str, req: GradingRunRequest) -> GradingResponse:
-        adjustable = self._grade_pipeline(
+        adjustable = self._grade_assessment(
             assessment_id=assessment_id,
-            use_stored_qset=True,
-            qset_provided=None,
-            use_stored_rubric=True,
-            rubric_provided=None,
-            use_stored_subs=True,
-            subs_provided=None,
-            persist_results=True,  # run persists
+            rule=None,
+            limit_config=None,    # no limiting for full run
+            persist=True,
         )
         return GradingResponse(graded_submissions=adjustable)
 
     def preview(self, assessment_id: str, req: GradingPreviewRequest) -> GradingResponse:
-        adjustable = self._grade_pipeline(
+        adjustable = self._grade_assessment(
             assessment_id=assessment_id,
-            use_stored_qset=req.use_stored_question_set,
-            qset_provided=req.question_set,
-            use_stored_rubric=req.use_stored_rubric,
-            rubric_provided=req.rubric,
-            use_stored_subs=req.use_stored_submissions,
-            subs_provided=req.raw_submissions,
-            limit=req.limit,
-            selection=req.selection,
-            seed=req.seed,
-            single_rule=req.rule,  # only rule-focused if provided
-            filter_to_target_ids=req.rule is not None,
-            persist_results=False,  # preview never persists
+            rule=req.rule,               # if provided, ignore stored rubric
+            limit_config=req.config,     # limit/selection/seed
+            persist=False,               # preview never persists
         )
         return GradingResponse(graded_submissions=adjustable)
 

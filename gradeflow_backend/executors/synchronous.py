@@ -3,11 +3,10 @@ import time
 import httpx
 from gradeflow_engine.core import run_pipeline
 
+from gradeflow_backend.config import get_settings
 from gradeflow_backend.executors.base import GradingJobExecutor
 from gradeflow_backend.executors.registry import register
 from gradeflow_backend.schemas.grading import GradingJobResult, GradingJobSpec, JobStatus
-
-REQUEST_TIMEOUT_S = 10
 
 
 class SynchronousJobExecutor(GradingJobExecutor):
@@ -25,9 +24,8 @@ class SynchronousJobExecutor(GradingJobExecutor):
             graded_submissions=pipeline_result.graded_submissions,
         )
 
-        resp = httpx.post(
-            callback_url, json=result.model_dump(mode="json"), timeout=REQUEST_TIMEOUT_S
-        )
+        timeout_s = get_settings().executor.callback_timeout_s
+        resp = httpx.post(callback_url, json=result.model_dump(mode="json"), timeout=timeout_s)
         resp.raise_for_status()
 
         job_id = f"job_{int(time.time() * 1000)}_{spec.type}"

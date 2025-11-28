@@ -1,7 +1,8 @@
-import os
 from collections.abc import Generator
 
 import pytest
+
+from gradeflow_backend.config import get_settings
 
 # Auto-load fixtures from modules under tests/fixtures
 pytest_plugins = [
@@ -13,16 +14,19 @@ pytest_plugins = [
 
 @pytest.fixture(scope="session", autouse=True)
 def test_env() -> Generator[None, None, None]:
-    """
-    Session-wide environment setup for tests.
-    - Ensures deterministic secrets and configs.
-    - Extend with other env vars as needed (e.g., logging levels).
-    """
-    os.environ.setdefault("JWT_SECRET", "test-secret")
-    os.environ.setdefault("JWT_ALGORITHM", "HS256")
-    os.environ.setdefault("JWT_ISSUER", "gradeflow-api")
-    os.environ.setdefault("JWT_AUDIENCE", "gradeflow-clients")
-    os.environ.setdefault("JOB_EXECUTOR", "SYNCHRONOUS")
+    settings = get_settings()
+
+    # Security (deterministic values for tests)
+    settings.security.jwt_secret = "test-secret"
+    settings.security.jwt_algorithm = "HS256"
+    settings.security.jwt_issuer = "gradeflow-api"
+    settings.security.jwt_audience = "gradeflow-clients"
+
+    # Executor: force synchronous, single worker, short timeouts for tests
+    settings.executor.job_executor = "SYNCHRONOUS"
+    settings.executor.job_num_workers = 1
+    settings.executor.job_timeout_s = 10
+    settings.executor.job_poll_interval_s = 0.1
 
     yield
     # No teardown required; pytest will end the session

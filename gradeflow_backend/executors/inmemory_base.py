@@ -16,8 +16,7 @@ from gradeflow_backend.executors.base import GradingJobExecutor
 from gradeflow_backend.schemas.grading import GradingJobResult, GradingJobSpec, JobStatus
 from gradeflow_backend.utils.engine import model_dump_minimal
 
-GRADEFLOW_ENGINE_CMD = "gradeflow-engine"
-REQUEST_TIMEOUT_S = 10
+DEFAULT_CALLBACK_TIMEOUT_S = 10
 DEFAULT_TIMEOUT_S = 300
 DEFAULT_POLL_INTERVAL_S = 1
 DEFAULT_NUM_WORKERS = 4
@@ -49,10 +48,12 @@ class InMemoryBaseJobExecutor(GradingJobExecutor):
         timeout_s: int = DEFAULT_TIMEOUT_S,
         poll_interval_s: float = DEFAULT_POLL_INTERVAL_S,
         num_workers: int = DEFAULT_NUM_WORKERS,
+        callback_timeout_s: int = DEFAULT_CALLBACK_TIMEOUT_S,
     ) -> None:
         self._timeout_s = timeout_s
         self._poll_interval_s = poll_interval_s
         self._num_workers = max(1, int(num_workers))
+        self._callback_timeout_s = callback_timeout_s
 
         # Queues: preview has higher priority than run
         self._jobs_preview: deque[_Job] = deque()
@@ -141,7 +142,9 @@ class InMemoryBaseJobExecutor(GradingJobExecutor):
         try:
             result = self._execute(job)
             resp = httpx.post(
-                job.callback_url, json=result.model_dump(mode="json"), timeout=REQUEST_TIMEOUT_S
+                job.callback_url,
+                json=result.model_dump(mode="json"),
+                timeout=self._callback_timeout_s,
             )
             resp.raise_for_status()
             with self._lock:

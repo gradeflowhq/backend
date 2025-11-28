@@ -1,7 +1,7 @@
 from argon2 import PasswordHasher
 from argon2.low_level import Type
 
-from gradeflow_backend.config import get_security_config
+from gradeflow_backend.config import get_settings
 
 # Configure argon2id
 _ph = PasswordHasher(
@@ -15,7 +15,7 @@ _ph = PasswordHasher(
 
 
 def hash_password(plaintext: str) -> str:
-    cfg = get_security_config()
+    cfg = get_settings().security
     if len(plaintext) < cfg.password_min_length:
         raise ValueError(f"Password must be at least {cfg.password_min_length} characters")
     return _ph.hash(plaintext)

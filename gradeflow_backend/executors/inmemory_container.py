@@ -1,11 +1,12 @@
-import os
 import subprocess
 from pathlib import Path
 
+from gradeflow_backend.config import get_settings
 from gradeflow_backend.executors.inmemory_base import (
+    DEFAULT_CALLBACK_TIMEOUT_S,
     DEFAULT_NUM_WORKERS,
     DEFAULT_POLL_INTERVAL_S,
-    REQUEST_TIMEOUT_S,
+    DEFAULT_TIMEOUT_S,
     InMemoryBaseJobExecutor,
 )
 from gradeflow_backend.executors.registry import register
@@ -69,7 +70,8 @@ class InMemoryContainerJobExecutor(InMemoryBaseJobExecutor):
         runtime: str = DEFAULT_RUNTIME,
         image: str = DEFAULT_IMAGE,
         container_workdir: str = DEFAULT_WORKDIR,
-        timeout_s: int = REQUEST_TIMEOUT_S,
+        timeout_s: int = DEFAULT_TIMEOUT_S,
+        callback_timeout_s: int = DEFAULT_CALLBACK_TIMEOUT_S,
         poll_interval_s: float = DEFAULT_POLL_INTERVAL_S,
         num_workers: int = DEFAULT_NUM_WORKERS,
     ) -> None:
@@ -77,6 +79,7 @@ class InMemoryContainerJobExecutor(InMemoryBaseJobExecutor):
             timeout_s=timeout_s,
             poll_interval_s=poll_interval_s,
             num_workers=num_workers,
+            callback_timeout_s=callback_timeout_s,
         )
         self._runtime = runtime
         self._image = image
@@ -117,18 +120,13 @@ class InMemoryContainerJobExecutor(InMemoryBaseJobExecutor):
 
 @register("INMEMORY_CONTAINER")
 def create_executor() -> InMemoryContainerJobExecutor:
-    # Environment overrides
-    runtime = os.getenv("JOB_CONTAINER_RUNTIME", DEFAULT_RUNTIME)
-    image = os.getenv("JOB_CONTAINER_IMAGE", DEFAULT_IMAGE)
-    workdir = os.getenv("JOB_CONTAINER_WORKDIR", DEFAULT_WORKDIR)
-    timeout_s = int(os.getenv("JOB_TIMEOUT_S", REQUEST_TIMEOUT_S))
-    poll_interval_s = float(os.getenv("JOB_POLL_INTERVAL_S", DEFAULT_POLL_INTERVAL_S))
-    num_workers = int(os.getenv("JOB_NUM_WORKERS", DEFAULT_NUM_WORKERS))
+    s = get_settings().executor
     return InMemoryContainerJobExecutor(
-        runtime=runtime,
-        image=image,
-        container_workdir=workdir,
-        timeout_s=timeout_s,
-        poll_interval_s=poll_interval_s,
-        num_workers=num_workers,
+        runtime=s.job_container_runtime,
+        image=s.job_container_image,
+        container_workdir=s.job_container_workdir,
+        callback_timeout_s=s.callback_timeout_s,
+        timeout_s=s.job_timeout_s,
+        poll_interval_s=s.job_poll_interval_s,
+        num_workers=s.job_num_workers,
     )

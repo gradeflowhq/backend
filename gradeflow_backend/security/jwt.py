@@ -4,7 +4,7 @@ from typing import Any, cast
 
 import jwt
 
-from gradeflow_backend.config import get_security_config
+from gradeflow_backend.config import get_settings
 
 
 class JwtError(Exception):
@@ -16,7 +16,7 @@ def _now() -> datetime:
 
 
 def create_access_token(sub: str, claims: dict[str, Any] | None = None) -> str:
-    cfg = get_security_config()
+    cfg = get_settings().security
     jti = uuid.uuid4().hex
     payload: dict[str, Any] = {
         "iss": cfg.jwt_issuer,
@@ -36,7 +36,7 @@ def create_access_token(sub: str, claims: dict[str, Any] | None = None) -> str:
 
 
 def create_refresh_token(sub: str, claims: dict[str, Any] | None = None) -> str:
-    cfg = get_security_config()
+    cfg = get_settings().security
     jti = uuid.uuid4().hex
     payload: dict[str, Any] = {
         "iss": cfg.jwt_issuer,
@@ -56,7 +56,7 @@ def create_refresh_token(sub: str, claims: dict[str, Any] | None = None) -> str:
 
 
 def decode_token(token: str) -> dict[str, Any]:
-    cfg = get_security_config()
+    cfg = get_settings().security
     try:
         payload = jwt.decode(
             token,

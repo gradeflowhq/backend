@@ -1,12 +1,8 @@
-import os
 import subprocess
 from pathlib import Path
 
+from gradeflow_backend.config import get_settings
 from gradeflow_backend.executors.inmemory_base import (
-    DEFAULT_NUM_WORKERS,
-    DEFAULT_POLL_INTERVAL_S,
-    GRADEFLOW_ENGINE_CMD,
-    REQUEST_TIMEOUT_S,
     InMemoryBaseJobExecutor,
 )
 from gradeflow_backend.executors.registry import register
@@ -19,8 +15,9 @@ def _build_cli_command(
     rubric_yaml: Path,
     out_yaml: Path,
 ) -> list[str]:
+    s = get_settings().executor
     return [
-        GRADEFLOW_ENGINE_CMD,
+        s.engine_command,
         "grade",
         "--submissions",
         str(submissions_csv),
@@ -65,12 +62,10 @@ class InMemorySubprocessJobExecutor(InMemoryBaseJobExecutor):
 
 @register("INMEMORY_SUBPROCESS")
 def create_executor() -> InMemorySubprocessJobExecutor:
-    # Environment overrides
-    timeout_s = int(os.getenv("JOB_TIMEOUT_S", REQUEST_TIMEOUT_S))
-    poll_interval_s = float(os.getenv("JOB_POLL_INTERVAL_S", DEFAULT_POLL_INTERVAL_S))
-    num_workers = int(os.getenv("JOB_NUM_WORKERS", DEFAULT_NUM_WORKERS))
+    s = get_settings().executor
     return InMemorySubprocessJobExecutor(
-        timeout_s=timeout_s,
-        poll_interval_s=poll_interval_s,
-        num_workers=num_workers,
+        timeout_s=s.job_timeout_s,
+        poll_interval_s=s.job_poll_interval_s,
+        num_workers=s.job_num_workers,
+        callback_timeout_s=s.callback_timeout_s,
     )

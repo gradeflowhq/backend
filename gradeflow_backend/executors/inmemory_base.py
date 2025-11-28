@@ -1,4 +1,5 @@
 import csv
+import logging
 import tempfile
 import threading
 import time
@@ -20,6 +21,8 @@ DEFAULT_CALLBACK_TIMEOUT_S = 10
 DEFAULT_TIMEOUT_S = 300
 DEFAULT_POLL_INTERVAL_S = 1
 DEFAULT_NUM_WORKERS = 4
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -83,6 +86,16 @@ class InMemoryBaseJobExecutor(GradingJobExecutor):
                 self._jobs_preview.append(job)
             else:
                 self._jobs_run.append(job)
+            q_preview, q_run = len(self._jobs_preview), len(self._jobs_run)
+            logger.info(
+                "Job submitted",
+                extra={
+                    "job_id": job_id,
+                    "assessment_id": spec.assessment_id,
+                    "type": spec.type,
+                    "queues": {"preview": q_preview, "run": q_run},
+                },
+            )
             self._cv.notify()
         return job_id
 
@@ -94,14 +107,17 @@ class InMemoryBaseJobExecutor(GradingJobExecutor):
         if self._started:
             return
         self._stop_event.clear()
+        logger.info("Executor starting", extra={"workers": self._num_workers})
         # Spawn N workers
         for i in range(self._num_workers):
             t = threading.Thread(target=self._worker_loop, name=f"GF-Worker-{i}", daemon=True)
             self._workers.append(t)
             t.start()
         self._started = True
+        logger.info("Executor started", extra={"workers": self._num_workers})
 
     def stop(self) -> None:
+        logger.info("Executor stopping")
         with self._lock:
             self._stop_event.set()
             self._cv.notify_all()
@@ -110,6 +126,7 @@ class InMemoryBaseJobExecutor(GradingJobExecutor):
                 t.join(timeout=2)
         self._workers.clear()
         self._started = False
+        logger.info("Executor stopped")
 
     # ------- Worker loop -------
 
@@ -124,6 +141,8 @@ class InMemoryBaseJobExecutor(GradingJobExecutor):
         return None
 
     def _worker_loop(self) -> None:
+        thread_name = threading.current_thread().name
+        logger.debug("Worker started", extra={"worker": thread_name})
         while True:
             with self._lock:
                 while not self._stop_event.is_set():
@@ -132,26 +151,71 @@ class InMemoryBaseJobExecutor(GradingJobExecutor):
                         break
                     self._cv.wait(timeout=self._poll_interval_s)
                 else:
+                    logger.debug("Worker stopping", extra={"worker": thread_name})
                     return
+            logger.debug(
+                "Job dequeued",
+                extra={
+                    "worker": thread_name,
+                    "job_id": job.id,
+                    "assessment_id": job.spec.assessment_id,
+                    "type": job.spec.type,
+                },
+            )
             self._process_job(job)
 
     def _process_job(self, job: _Job) -> None:
         with self._lock:
             self._set_status(job.id, "running")
-
+        t0 = time.perf_counter()
         try:
             result = self._execute(job)
+            dur = time.perf_counter() - t0
+            logger.info(
+                "Job executed, posting callback",
+                extra={
+                    "job_id": job.id,
+                    "assessment_id": job.spec.assessment_id,
+                    "type": job.spec.type,
+                    "duration_s": round(dur, 4),
+                    "callback_host": self._callback_host(job.callback_url),
+                },
+            )
             resp = httpx.post(
                 job.callback_url,
                 json=result.model_dump(mode="json"),
                 timeout=self._callback_timeout_s,
             )
+            logger.info(
+                "Callback response",
+                extra={"job_id": job.id, "status_code": resp.status_code},
+            )
             resp.raise_for_status()
             with self._lock:
                 self._set_status(job.id, "completed")
+            logger.info("Callback succeeded", extra={"job_id": job.id})
         except Exception:
             with self._lock:
                 self._set_status(job.id, "failed")
+            logger.exception(
+                "Job failed",
+                extra={
+                    "job_id": job.id,
+                    "assessment_id": job.spec.assessment_id,
+                    "type": job.spec.type,
+                },
+            )
+
+    def _callback_host(self, url: str) -> str:
+        try:
+            from urllib.parse import urlparse
+
+            u = urlparse(url)
+            # drop the final token path segment
+            base_path = u.path.rsplit("/", 1)[0]
+            return f"{u.scheme}://{u.netloc}{base_path}"
+        except Exception:
+            return "<redacted>"
 
     # ------- Shared staging and parsing -------
 
@@ -160,6 +224,11 @@ class InMemoryBaseJobExecutor(GradingJobExecutor):
         for rs in raw_subs:
             qids.update(rs.raw_answer_map.keys())
         ordered_qids = natsorted(qids)
+
+        logger.debug(
+            "Staging submissions CSV",
+            extra={"path": str(path), "rows": len(raw_subs), "columns": len(ordered_qids) + 1},
+        )
 
         with path.open("w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=["student_id", *ordered_qids])
@@ -171,6 +240,7 @@ class InMemoryBaseJobExecutor(GradingJobExecutor):
                 writer.writerow(row)
 
     def _parse_output_yaml(self, out_yaml: Path) -> list[GradedSubmission]:
+        logger.debug("Parsing engine output", extra={"path": str(out_yaml)})
         items_raw = out_yaml.read_text(encoding="utf-8")
         items: list[Any] = yaml.safe_load(items_raw) or []
         return [GradedSubmission.model_validate(obj) for obj in items]
@@ -186,6 +256,19 @@ class InMemoryBaseJobExecutor(GradingJobExecutor):
             rubric_yaml = workdir / "rubric.yaml"
             out_yaml = workdir / "graded.yaml"
 
+            logger.debug(
+                "Staging inputs",
+                extra={
+                    "job_id": job.id,
+                    "workdir": str(workdir),
+                    "files": {
+                        "submissions": str(submissions_csv),
+                        "qset": str(qset_yaml),
+                        "rubric": str(rubric_yaml),
+                    },
+                },
+            )
+
             # Stage inputs
             self._write_submissions_csv(submissions_csv, spec.raw_submissions)
             qset_yaml.write_text(yaml.safe_dump(spec.question_set.model_dump()), encoding="utf-8")
@@ -195,6 +278,7 @@ class InMemoryBaseJobExecutor(GradingJobExecutor):
             )
 
             # Invoke engine (subclass-specific)
+            t0 = time.perf_counter()
             self._invoke_engine(
                 workdir=workdir,
                 submissions_csv=submissions_csv,
@@ -202,11 +286,25 @@ class InMemoryBaseJobExecutor(GradingJobExecutor):
                 rubric_yaml=rubric_yaml,
                 out_path=out_yaml,
             )
+            dur = time.perf_counter() - t0
+            logger.info(
+                "Engine invocation finished",
+                extra={
+                    "job_id": job.id,
+                    "duration_s": round(dur, 4),
+                    "output_exists": out_yaml.exists(),
+                },
+            )
 
             if not out_yaml.exists():
+                logger.error("Engine did not produce output", extra={"job_id": job.id})
                 raise RuntimeError("Engine did not produce the expected output file")
 
             graded = self._parse_output_yaml(out_yaml)
+            logger.info(
+                "Parsed graded submissions",
+                extra={"job_id": job.id, "count": len(graded)},
+            )
 
             return GradingJobResult(
                 assessment_id=spec.assessment_id,

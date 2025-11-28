@@ -1,3 +1,4 @@
+import logging
 import subprocess
 from pathlib import Path
 
@@ -10,6 +11,8 @@ from gradeflow_backend.executors.inmemory_base import (
     InMemoryBaseJobExecutor,
 )
 from gradeflow_backend.executors.registry import register
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_RUNTIME = "docker"
 DEFAULT_IMAGE = "gradeflow-engine:latest"
@@ -104,6 +107,15 @@ class InMemoryContainerJobExecutor(InMemoryBaseJobExecutor):
             rubric_yaml=rubric_yaml,
             out_yaml=out_path,
         )
+        logger.info(
+            "Invoking engine in container",
+            extra={
+                "runtime": self._runtime,
+                "image": self._image,
+                "timeout_s": self._timeout_s,
+                "cmd": cmd,
+            },
+        )
         completed = subprocess.run(
             cmd,
             capture_output=True,
@@ -111,7 +123,10 @@ class InMemoryContainerJobExecutor(InMemoryBaseJobExecutor):
             timeout=self._timeout_s,
             check=False,
         )
+        logger.info("Container run completed", extra={"returncode": completed.returncode})
         if completed.returncode != 0:
+            logger.debug("Container stdout", extra={"stdout": completed.stdout[:4000]})
+            logger.debug("Container stderr", extra={"stderr": completed.stderr[:4000]})
             raise RuntimeError(
                 f"Container executor failed ({self._runtime}): "
                 f"{completed.stdout} {completed.stderr}"

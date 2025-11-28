@@ -1,3 +1,4 @@
+import logging
 import time
 
 import httpx
@@ -8,14 +9,31 @@ from gradeflow_backend.executors.base import GradingJobExecutor
 from gradeflow_backend.executors.registry import register
 from gradeflow_backend.schemas.grading import GradingJobResult, GradingJobSpec, JobStatus
 
+logger = logging.getLogger(__name__)
+
 
 class SynchronousJobExecutor(GradingJobExecutor):
     def submit(self, spec: GradingJobSpec, callback_url: str) -> str:
+        job_id = f"job_{int(time.time() * 1000)}_{spec.type}"
+        logger.info(
+            "Running synchronous job",
+            extra={"job_id": job_id, "assessment_id": spec.assessment_id, "type": spec.type},
+        )
+        t0 = time.perf_counter()
         pipeline_result = run_pipeline(
             raw_submissions=spec.raw_submissions,
             question_set=spec.question_set,
             rubric=spec.rubric,
             saver_name=None,
+        )
+        dur = time.perf_counter() - t0
+        logger.info(
+            "Pipeline completed",
+            extra={
+                "job_id": job_id,
+                "duration_s": round(dur, 4),
+                "graded_count": len(pipeline_result.graded_submissions),
+            },
         )
 
         result = GradingJobResult(
@@ -25,10 +43,17 @@ class SynchronousJobExecutor(GradingJobExecutor):
         )
 
         timeout_s = get_settings().executor.callback_timeout_s
+        logger.info(
+            "Posting callback",
+            extra={"job_id": job_id, "timeout_s": timeout_s},
+        )
         resp = httpx.post(callback_url, json=result.model_dump(mode="json"), timeout=timeout_s)
+        logger.info(
+            "Callback response",
+            extra={"job_id": job_id, "status_code": resp.status_code},
+        )
         resp.raise_for_status()
 
-        job_id = f"job_{int(time.time() * 1000)}_{spec.type}"
         return job_id
 
     def get_status(self, job_id: str) -> JobStatus:

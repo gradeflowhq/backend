@@ -1,3 +1,4 @@
+import logging
 import subprocess
 from pathlib import Path
 
@@ -6,6 +7,8 @@ from gradeflow_backend.executors.inmemory_base import (
     InMemoryBaseJobExecutor,
 )
 from gradeflow_backend.executors.registry import register
+
+logger = logging.getLogger(__name__)
 
 
 # Reuse the same CLI arguments as before
@@ -49,6 +52,10 @@ class InMemorySubprocessJobExecutor(InMemoryBaseJobExecutor):
         out_path: Path,
     ) -> None:
         cmd = _build_cli_command(submissions_csv, qset_yaml, rubric_yaml, out_path)
+        logger.info(
+            "Invoking engine CLI",
+            extra={"cmd": cmd, "timeout_s": self._timeout_s, "workdir": str(workdir)},
+        )
         completed = subprocess.run(
             cmd,
             capture_output=True,
@@ -56,7 +63,14 @@ class InMemorySubprocessJobExecutor(InMemoryBaseJobExecutor):
             timeout=self._timeout_s,
             check=False,
         )
+        logger.info(
+            "Engine CLI completed",
+            extra={"returncode": completed.returncode},
+        )
         if completed.returncode != 0:
+            # Emit stdout/stderr at debug to avoid noisy logs by default
+            logger.debug("Engine stdout", extra={"stdout": completed.stdout[:4000]})
+            logger.debug("Engine stderr", extra={"stderr": completed.stderr[:4000]})
             raise RuntimeError(f"CLI failed: {completed.stdout} {completed.stderr}")
 
 

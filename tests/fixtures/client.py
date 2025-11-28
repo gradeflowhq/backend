@@ -1,5 +1,8 @@
 from collections.abc import Generator
+from typing import Protocol
+from urllib.parse import urlparse
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.engine import Engine
@@ -30,3 +33,42 @@ def client(test_engine: Engine) -> Generator[TestClient, None, None]:
         yield c
 
     app.dependency_overrides.clear()
+
+
+class _ResponseLike(Protocol):
+    status_code: int
+    text: str
+
+    def raise_for_status(self) -> None: ...
+
+
+@pytest.fixture(autouse=True)
+def patch_httpx_post(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    def _post(
+        url: str,
+        *,
+        json: dict[str, object] | None = None,
+        timeout: float | int | None = None,
+        **kwargs: object,
+    ) -> _ResponseLike:
+        parsed = urlparse(url)
+        path = parsed.path or "/"
+        resp = client.post(path, json=json)
+
+        class _DummyResponse:
+            status_code = resp.status_code
+            text = resp.text
+
+            def raise_for_status(self) -> None:
+                if resp.status_code >= 400:
+                    req = httpx.Request("POST", path)
+                    res = httpx.Response(
+                        status_code=resp.status_code,
+                        content=resp.text.encode("utf-8"),
+                        request=req,
+                    )
+                    raise httpx.HTTPStatusError(resp.text, request=req, response=res)
+
+        return _DummyResponse()
+
+    monkeypatch.setattr(httpx, "post", _post)

@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from tests.helpers.api import ApiClient
 from tests.helpers.data import QUESTION_SET_YAML, RUBRIC_YAML, SUBMISSIONS_CSV
 
@@ -21,7 +19,7 @@ def test_grading_flow(api: ApiClient) -> None:
     api.set_rubric_yaml(created.id, RUBRIC_YAML)
     api.set_submissions_csv(created.id, SUBMISSIONS_CSV)
 
-    # Run grading (helper accepts 200 or 422 and returns typed result or empty)
+    # Start grading and immediately fetch results (helper uses async run + GET)
     run = api.run_grading(created.id)
 
     if run.graded_submissions:
@@ -35,9 +33,6 @@ def test_grading_flow(api: ApiClient) -> None:
         assert isinstance(export.data, str)
 
         # Adjustments: within bounds should succeed
-        # Initial expected points from RUBRIC_YAML:
-        # - s1: q1=1.0 (Alice exact match), q2=2.0 (90 in range)
-        # - s2: q1=0.0 (Bob mismatch),      q2=2.0 (76 in range)
         adjustments: list[dict[str, object]] = [
             {
                 "student_id": "s2",
@@ -81,7 +76,7 @@ def test_grading_flow(api: ApiClient) -> None:
         assert "s1" in csv_out and "6.0" in csv_out
         assert "s2" in csv_out and "3.0" in csv_out
 
-        # Negative test: out-of-bounds adjustment should be rejected (Option B)
+        # Negative test: out-of-bounds adjustment should be rejected
         bad_resp = api.try_adjust_grading(
             created.id,
             adjustments=[{"student_id": "s1", "question_id": "q2", "adjusted_points": 3.0}],
@@ -129,7 +124,6 @@ def test_preview_limit_first(api: ApiClient) -> None:
     # Limit to first (by student_id sorted) => "s1"
     resp = api.preview_grading(
         assessment_id=created.id,
-        use_stored_rubric=True,  # using full rubric this time
         limit=1,
         selection="first",
     )

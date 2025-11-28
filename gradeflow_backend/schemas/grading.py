@@ -1,8 +1,10 @@
 from typing import Any, Literal
 
+from gradeflow_engine.question_sets.model import QuestionSet
+from gradeflow_engine.rubrics.model import Rubric
 from gradeflow_engine.rules.models import QuestionRule
 from gradeflow_engine.rules.result import QuestionResult
-from gradeflow_engine.submissions.models import Submission
+from gradeflow_engine.submissions.models import GradedSubmission, RawSubmission, Submission
 from gradeflow_engine.submissions.savers.base import SubmissionsSaverOutput
 from pydantic import BaseModel, Field
 
@@ -72,3 +74,31 @@ class GradingPreviewRequest(BaseModel):
         default_factory=GradingLimitConfig,
         description="Configuration for limiting the number of submissions to preview.",
     )
+
+
+JobType = Literal["run", "preview"]
+JobStatus = Literal["queued", "running", "completed", "failed"]
+
+
+class JobStatusResponse(BaseModel):
+    job_id: str
+    status: JobStatus
+
+
+class GradingJobSpec(BaseModel):
+    assessment_id: str
+    type: JobType
+    raw_submissions: list[RawSubmission] = Field(..., min_length=1)
+    question_set: QuestionSet
+    rubric: Rubric
+
+
+class GradingJobResult(BaseModel):
+    assessment_id: str
+    type: JobType
+    graded_submissions: list[GradedSubmission]
+
+
+class GradingJob(BaseModel):
+    job_id: str
+    url: str

@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from tests.helpers.api import ApiClient
 from tests.helpers.data import QUESTION_SET_YAML, SUBMISSIONS_CSV
 

@@ -14,6 +14,7 @@ from gradeflow_backend.routers import (
     auth,
     grading,
     health,
+    jobs,
     memberships,
     question_sets,
     registry,
@@ -90,6 +91,7 @@ app.include_router(rubrics.router)
 app.include_router(grading.router)
 app.include_router(auth.router)
 app.include_router(memberships.router)
+app.include_router(jobs.router)
 
 
 # Install OpenAPI patcher

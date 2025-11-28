@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from datetime import datetime
 from typing import TYPE_CHECKING
 
@@ -25,6 +23,10 @@ class Assessment(Base):
     rubric_yaml: Mapped[str | None] = mapped_column(Text, nullable=True)
     submissions_yaml: Mapped[str | None] = mapped_column(Text, nullable=True)
     graded_submissions_yaml: Mapped[str | None] = mapped_column(Text, nullable=True)
+    graded_submissions_preview_yaml: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    run_job_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    preview_job_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
@@ -32,7 +34,7 @@ class Assessment(Base):
     )
 
     # Association object links
-    user_links: Mapped[list[UserAssessment]] = relationship(
+    user_links: Mapped[list["UserAssessment"]] = relationship(
         "UserAssessment",
         back_populates="assessment",
         cascade="all, delete-orphan",
@@ -40,4 +42,4 @@ class Assessment(Base):
     )
 
     # Association proxy to users (collection proxy, not a mapped column)
-    users: AssociationProxy[list[User]] = association_proxy("user_links", "user")
+    users: AssociationProxy[list["User"]] = association_proxy("user_links", "user")

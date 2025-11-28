@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import os
 from collections.abc import Generator
 
@@ -24,7 +22,7 @@ def test_env() -> Generator[None, None, None]:
     os.environ.setdefault("JWT_ALGORITHM", "HS256")
     os.environ.setdefault("JWT_ISSUER", "gradeflow-api")
     os.environ.setdefault("JWT_AUDIENCE", "gradeflow-clients")
-    # Add other defaults if your code reads env at import time
+    os.environ.setdefault("JOB_EXECUTOR", "SYNCHRONOUS")
 
     yield
     # No teardown required; pytest will end the session

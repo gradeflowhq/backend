@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from datetime import datetime
 from typing import TYPE_CHECKING
 
@@ -27,5 +25,5 @@ class UserAssessment(Base):
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-    user: Mapped[User] = relationship(back_populates="assessment_links")
-    assessment: Mapped[Assessment] = relationship(back_populates="user_links")
+    user: Mapped["User"] = relationship(back_populates="assessment_links")
+    assessment: Mapped["Assessment"] = relationship(back_populates="user_links")

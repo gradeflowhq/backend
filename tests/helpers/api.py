@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from typing import TypeAlias
 
 from fastapi.testclient import TestClient
@@ -10,7 +8,12 @@ from gradeflow_backend.schemas.assessments import (
     AssessmentsListResponse,
 )
 from gradeflow_backend.schemas.auth import MeResponse, TokenPairResponse
-from gradeflow_backend.schemas.grading import GradingExportResponse, GradingResponse
+from gradeflow_backend.schemas.grading import (
+    GradingExportResponse,
+    GradingJob,
+    GradingResponse,
+    JobStatusResponse,
+)
 from gradeflow_backend.schemas.memberships import MembershipResponse
 from gradeflow_backend.schemas.question_sets import (
     ParseSubmissionsResponse,
@@ -362,21 +365,45 @@ class ApiClient:
         assert r.status_code == 204, r.text
 
     # -----------------
-    # Grading (try-variants)
+    # Grading
     # -----------------
 
     def try_run_grading(self, assessment_id: str) -> Response:
+        # Updated backend path (no /run)
         return self.client.post(
-            f"/assessments/{assessment_id}/grading/run",
+            f"/assessments/{assessment_id}/grading",
             json={},
             headers=self._auth_header,
         )
+
+    def run_grading_start(self, assessment_id: str) -> GradingJob:
+        r = self.try_run_grading(assessment_id=assessment_id)
+        assert r.status_code == 200, r.text
+        return GradingJob.model_validate(r.json())
+
+    def get_grading_job(self, assessment_id: str) -> GradingJob:
+        r = self.client.get(
+            f"/assessments/{assessment_id}/grading/job",
+            headers=self._auth_header,
+        )
+        assert r.status_code == 200, r.text
+        return GradingJob.model_validate(r.json())
+
+    def get_job_status(self, job_id: str) -> JobStatusResponse:
+        r = self.client.get(f"/jobs/{job_id}")
+        assert r.status_code == 200, r.text
+        return JobStatusResponse.model_validate(r.json())
 
     def try_get_grading(self, assessment_id: str) -> Response:
         return self.client.get(
             f"/assessments/{assessment_id}/grading",
             headers=self._auth_header,
         )
+
+    def get_grading(self, assessment_id: str) -> GradingResponse:
+        r = self.try_get_grading(assessment_id=assessment_id)
+        assert r.status_code == 200, r.text
+        return GradingResponse.model_validate(r.json())
 
     def try_export_grading(self, assessment_id: str) -> Response:
         return self.client.post(
@@ -385,11 +412,20 @@ class ApiClient:
             headers=self._auth_header,
         )
 
+    def export_grading(self, assessment_id: str) -> GradingExportResponse:
+        r = self.try_export_grading(assessment_id=assessment_id)
+        assert r.status_code == 200, r.text
+        return GradingExportResponse.model_validate(r.json())
+
     def try_delete_grading(self, assessment_id: str) -> Response:
         return self.client.delete(
             f"/assessments/{assessment_id}/grading",
             headers=self._auth_header,
         )
+
+    def delete_grading(self, assessment_id: str) -> None:
+        r = self.try_delete_grading(assessment_id=assessment_id)
+        assert r.status_code == 204, r.text
 
     def try_adjust_grading(
         self, assessment_id: str, adjustments: list[dict[str, object]]
@@ -400,76 +436,6 @@ class ApiClient:
             headers=self._auth_header,
         )
 
-    def try_preview_grading(
-        self,
-        assessment_id: str,
-        *,
-        use_stored_question_set: bool = True,
-        use_stored_rubric: bool = True,
-        use_stored_submissions: bool = True,
-        rule: dict[str, object] | None = None,
-        question_set: dict[str, object] | None = None,
-        rubric: dict[str, object] | None = None,
-        raw_submissions: list[dict[str, object]] | None = None,
-        limit: int | None = None,
-        selection: str = "first",
-        seed: int | None = None,
-    ) -> Response:
-        """
-        Call grading preview endpoint. If 'rule' is provided, preview only that rule.
-        You can override stored artifacts by setting use_stored_* to False and providing
-        inline payloads.
-        """
-        payload: dict[str, object] = {
-            "use_stored_question_set": use_stored_question_set,
-            "use_stored_rubric": use_stored_rubric,
-            "use_stored_submissions": use_stored_submissions,
-            "selection": selection,
-        }
-        if rule is not None:
-            payload["rule"] = rule
-        if question_set is not None:
-            payload["question_set"] = question_set
-        if rubric is not None:
-            payload["rubric"] = rubric
-        if raw_submissions is not None:
-            payload["raw_submissions"] = raw_submissions
-        if limit is not None:
-            payload["limit"] = limit
-        if seed is not None:
-            payload["seed"] = seed
-
-        return self.client.post(
-            f"/assessments/{assessment_id}/grading/preview",
-            json=payload,
-            headers=self._auth_header,
-        )
-
-    # Grading (success-path delegates to try_)
-
-    def run_grading(self, assessment_id: str) -> GradingResponse:
-        r = self.try_run_grading(assessment_id=assessment_id)
-        assert r.status_code in (200, 422), r.text
-        return (
-            GradingResponse.model_validate(r.json())
-            if r.status_code == 200
-            else GradingResponse(graded_submissions=[])
-        )
-
-    def get_grading(self, assessment_id: str) -> GradingResponse:
-        r = self.try_get_grading(assessment_id=assessment_id)
-        assert r.status_code == 200, r.text
-        return GradingResponse.model_validate(r.json())
-
-    def export_grading(self, assessment_id: str) -> GradingExportResponse:
-        r = self.try_export_grading(assessment_id=assessment_id)
-        assert r.status_code == 200, r.text
-        return GradingExportResponse.model_validate(r.json())
-
-    def delete_grading(self, assessment_id: str) -> None:
-        r = self.try_delete_grading(assessment_id=assessment_id)
-        assert r.status_code == 204, r.text
-
     def adjust_grading(
         self, assessment_id: str, adjustments: list[dict[str, object]]
     ) -> GradingResponse:
@@ -477,40 +443,87 @@ class ApiClient:
         assert r.status_code == 200, r.text
         return GradingResponse.model_validate(r.json())
 
-    def preview_grading(
+    # Convenience helper to start run-grading and immediately fetch results
+    def run_grading(self, assessment_id: str) -> GradingResponse:
+        _ = self.run_grading_start(assessment_id)
+        return self.get_grading(assessment_id)
+
+    # -----------------
+    # Grading preview
+    # -----------------
+
+    def try_preview_grading(
         self,
         assessment_id: str,
         *,
-        use_stored_question_set: bool = True,
-        use_stored_rubric: bool = True,
-        use_stored_submissions: bool = True,
         rule: dict[str, object] | None = None,
-        question_set: dict[str, object] | None = None,
-        rubric: dict[str, object] | None = None,
-        raw_submissions: list[dict[str, object]] | None = None,
         limit: int | None = None,
-        selection: str = "first",
+        selection: str | None = None,
         seed: int | None = None,
-    ) -> GradingResponse:
+    ) -> Response:
+        payload: dict[str, object] = {}
+        if rule is not None:
+            payload["rule"] = rule
+        config: dict[str, object] = {}
+        if limit is not None:
+            config["limit"] = limit
+        if selection is not None:
+            config["selection"] = selection
+        if seed is not None:
+            config["seed"] = seed
+        if config:
+            payload["config"] = config
+
+        return self.client.post(
+            f"/assessments/{assessment_id}/grading/preview",
+            json=payload,
+            headers=self._auth_header,
+        )
+
+    def preview_grading_start(
+        self,
+        assessment_id: str,
+        *,
+        rule: dict[str, object] | None = None,
+        limit: int | None = None,
+        selection: str | None = None,
+        seed: int | None = None,
+    ) -> GradingJob:
         r = self.try_preview_grading(
             assessment_id=assessment_id,
-            use_stored_question_set=use_stored_question_set,
-            use_stored_rubric=use_stored_rubric,
-            use_stored_submissions=use_stored_submissions,
             rule=rule,
-            question_set=question_set,
-            rubric=rubric,
-            raw_submissions=raw_submissions,
             limit=limit,
             selection=selection,
             seed=seed,
         )
-        assert r.status_code in (200, 422), r.text
-        return (
-            GradingResponse.model_validate(r.json())
-            if r.status_code == 200
-            else GradingResponse(graded_submissions=[])
+        assert r.status_code == 200, r.text
+        return GradingJob.model_validate(r.json())
+
+    def get_grading_preview(self, assessment_id: str) -> GradingResponse:
+        r = self.client.get(
+            f"/assessments/{assessment_id}/grading/preview",
+            headers=self._auth_header,
         )
+        assert r.status_code == 200, r.text
+        return GradingResponse.model_validate(r.json())
+
+    def preview_grading(
+        self,
+        assessment_id: str,
+        *,
+        rule: dict[str, object] | None = None,
+        limit: int | None = None,
+        selection: str | None = None,
+        seed: int | None = None,
+    ) -> GradingResponse:
+        _ = self.preview_grading_start(
+            assessment_id=assessment_id,
+            rule=rule,
+            limit=limit,
+            selection=selection,
+            seed=seed,
+        )
+        return self.get_grading_preview(assessment_id)
 
     # -----------------
     # Memberships (try-variants)
@@ -555,7 +568,7 @@ class ApiClient:
             headers=self._auth_header,
         )
 
-    # Memberships (success-path delegates to try_)
+    # Memberships (success-path delegates to try-)
 
     def list_members(self, assessment_id: str) -> AssessmentUsersResponse:
         r = self.try_list_members(assessment_id)
@@ -578,10 +591,10 @@ class ApiClient:
         user_id: str,
         role: Role,
     ) -> MembershipResponse:
-        r = self.try_set_member_role(assessment_id, user_id=user_id, role=role)
+        r = self.try_set_member_role(assessment_id=assessment_id, user_id=user_id, role=role)
         assert r.status_code == 200, r.text
         return MembershipResponse.model_validate(r.json())
 
     def remove_member(self, assessment_id: str, user_id: str) -> None:
-        r = self.try_remove_member(assessment_id, user_id=user_id)
+        r = self.try_remove_member(assessment_id=assessment_id, user_id=user_id)
         assert r.status_code == 204, r.text

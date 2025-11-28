@@ -1,15 +1,13 @@
-# backend/gradeflow_backend/services/grading.py
 import random
-from collections.abc import Sequence
-from dataclasses import dataclass
 
 import yaml
+from fastapi import Request
 from gradeflow_engine.core import save_graded_submissions
 from gradeflow_engine.question_sets.model import QuestionSet
 from gradeflow_engine.rubrics.model import Rubric
 from gradeflow_engine.rules.models import QuestionRule
 from gradeflow_engine.rules.result import QuestionResult
-from gradeflow_engine.submissions.models import GradedSubmission, RawSubmission, Submission
+from gradeflow_engine.submissions.models import GradedSubmission, RawSubmission
 from sqlalchemy.exc import NoResultFound
 
 from gradeflow_backend.models.assessment import Assessment
@@ -20,22 +18,21 @@ from gradeflow_backend.schemas.grading import (
     GradeAdjustmentRequest,
     GradingExportRequest,
     GradingExportResponse,
+    GradingJob,
+    GradingJobSpec,
     GradingLimitConfig,
     GradingPreviewRequest,
     GradingResponse,
     GradingRunRequest,
+    JobType,
 )
 from gradeflow_backend.services.exceptions import (
     BadRequestError,
     NotFoundError,
     RubricValidationError,
 )
-
-
-@dataclass(frozen=True)
-class ParsedBundle:
-    qset: QuestionSet
-    submissions: list[Submission]
+from gradeflow_backend.services.jobs import JobsService
+from gradeflow_backend.utils.jobs import build_grading_job
 
 
 class GradingService:
@@ -97,103 +94,80 @@ class GradingService:
             return rnd.sample(subs_copy, k=limit)
         raise BadRequestError("selection must be 'first' or 'random'")
 
-    def _parse_bundle(self, qset: QuestionSet, raw_subs: Sequence[RawSubmission]) -> ParsedBundle:
-        submissions = qset.parse(list(raw_subs))
-        return ParsedBundle(qset=qset, submissions=submissions)
-
-    def _grade_adjustable(
-        self, rubric: Rubric, bundle: ParsedBundle
-    ) -> list[AdjustableGradedSubmission]:
-        graded = rubric.grade(bundle.submissions)
-        return [
-            AdjustableGradedSubmission(
-                student_id=gs.student_id,
-                answer_map=gs.answer_map,
-                results=[
-                    AdjustableQuestionResult(
-                        **res.model_dump(),
-                        adjusted_points=None,
-                        adjusted_feedback=None,
-                    )
-                    for res in gs.results
-                ],
-            )
-            for gs in graded
-        ]
-
-    def _grade_with(
-        self, *, qset: QuestionSet, rubric: Rubric, raw_subs: list[RawSubmission]
-    ) -> list[AdjustableGradedSubmission]:
-        self._validate_or_raise(rubric, qset)
-        bundle = self._parse_bundle(qset, raw_subs)
-        return self._grade_adjustable(rubric, bundle)
-
-    def _persist_graded_yaml(
-        self, assessment_id: str, adjustable: list[AdjustableGradedSubmission]
-    ) -> None:
-        payload = [gs.model_dump() for gs in adjustable]
-        self.repo.set_graded_yaml(assessment_id, yaml.safe_dump(payload))
-
-    def _grade_assessment(
+    def _run(
         self,
-        *,
         assessment_id: str,
-        rule: QuestionRule | None,
-        limit_config: GradingLimitConfig | None,
-        persist: bool,
-    ) -> list[AdjustableGradedSubmission]:
-        """
-        Loads stored artifacts for the assessment and performs grading.
-        - If rule is provided, ignores stored rubric and grades with only that rule.
-        - Applies optional limiting via limit_config before grading.
-        - Persists results if persist=True.
-        """
+        type: JobType,
+        request: Request,
+        jobs: JobsService,
+        rule: QuestionRule | None = None,
+        config: GradingLimitConfig | None = None,
+    ) -> GradingJob:
         a = self._get_assessment(assessment_id)
-
         qset = self._load_question_set_yaml(a.question_set_yaml)
-        raw_subs_all = self._load_raw_submissions_yaml(a.submissions_yaml)
+        raw_subs = self._load_raw_submissions_yaml(a.submissions_yaml)
 
-        effective_rubric = Rubric(rules=[rule]) if rule is not None else self._load_rubric_yaml(a.rubric_yaml)
+        # If a single rule is provided, build a transient rubric; else use stored
+        rubric = Rubric(rules=[rule]) if rule is not None else self._load_rubric_yaml(a.rubric_yaml)
 
-        # Apply optional limiting
-        if limit_config is not None:
+        self._validate_or_raise(rubric, qset)
+
+        if config is not None:
             raw_subs = self._limit_raw_submissions(
-                raw_subs_all,
-                limit=limit_config.limit,
-                selection=limit_config.selection,
-                seed=limit_config.seed,
+                raw_subs,
+                limit=config.limit,
+                selection=config.selection,
+                seed=config.seed,
             )
-        else:
-            raw_subs = raw_subs_all
 
-        adjustable = self._grade_with(qset=qset, rubric=effective_rubric, raw_subs=raw_subs)
-
-        if persist:
-            self._persist_graded_yaml(assessment_id, adjustable)
-
-        return adjustable
-
-    # ---------------------------
-    # Public methods
-    # ---------------------------
-
-    def run(self, assessment_id: str, req: GradingRunRequest) -> GradingResponse:
-        adjustable = self._grade_assessment(
+        spec = GradingJobSpec(
             assessment_id=assessment_id,
+            type=type,
+            raw_submissions=raw_subs,
+            question_set=qset,
+            rubric=rubric,
+        )
+        return jobs.submit(spec, request)
+
+    # ---------------------------
+    # Grading job submission
+    # ---------------------------
+
+    def run(
+        self,
+        assessment_id: str,
+        req: GradingRunRequest,
+        request: Request,
+        jobs: JobsService,
+    ) -> GradingJob:
+        return self._run(
+            assessment_id,
+            type="run",
+            request=request,
+            jobs=jobs,
             rule=None,
-            limit_config=None,    # no limiting for full run
-            persist=True,
+            config=None,
         )
-        return GradingResponse(graded_submissions=adjustable)
 
-    def preview(self, assessment_id: str, req: GradingPreviewRequest) -> GradingResponse:
-        adjustable = self._grade_assessment(
-            assessment_id=assessment_id,
-            rule=req.rule,               # if provided, ignore stored rubric
-            limit_config=req.config,     # limit/selection/seed
-            persist=False,               # preview never persists
+    def run_preview(
+        self,
+        assessment_id: str,
+        req: GradingPreviewRequest,
+        request: Request,
+        jobs: JobsService,
+    ) -> GradingJob:
+        return self._run(
+            assessment_id,
+            type="preview",
+            request=request,
+            jobs=jobs,
+            rule=req.rule,
+            config=req.config,
         )
-        return GradingResponse(graded_submissions=adjustable)
+
+    # ---------------------------
+    # Grading results management
+    # ---------------------------
 
     def get(self, assessment_id: str) -> GradingResponse:
         try:
@@ -205,6 +179,15 @@ class GradingService:
         items: list[dict[str, object]] = yaml.safe_load(graded_yaml)
         adjustable = [AdjustableGradedSubmission.model_validate(obj) for obj in items]
         return GradingResponse(graded_submissions=adjustable)
+
+    def get_job(self, assessment_id: str, request: Request) -> GradingJob:
+        try:
+            job_id = self.repo.get_run_job_id(assessment_id)
+        except NoResultFound as e:
+            raise NotFoundError("Assessment not found") from e
+        if not job_id:
+            raise NotFoundError("No job found for this assessment")
+        return build_grading_job(request, job_id)
 
     def delete(self, assessment_id: str) -> None:
         try:
@@ -297,3 +280,25 @@ class GradingService:
         ).rstrip()
         filename = f"graded_{safe_assessment_name}.{out.extension}"
         return GradingExportResponse(data=out.data, extension=out.extension, filename=filename)
+
+    def get_preview(self, assessment_id: str) -> GradingResponse:
+        try:
+            yaml_str = self.repo.get_graded_preview_yaml(assessment_id)
+        except NoResultFound as e:
+            raise NotFoundError("Assessment not found") from e
+        if not yaml_str:
+            return GradingResponse(graded_submissions=[])
+        items: list[dict[str, object]] = yaml.safe_load(yaml_str)
+        adjustable = [AdjustableGradedSubmission.model_validate(obj) for obj in items]
+        # Clear after retrieval
+        self.repo.set_graded_preview_yaml(assessment_id, None)
+        return GradingResponse(graded_submissions=adjustable)
+
+    def get_preview_job(self, assessment_id: str, request: Request) -> GradingJob:
+        try:
+            job_id = self.repo.get_preview_job_id(assessment_id)
+        except NoResultFound as e:
+            raise NotFoundError("Assessment not found") from e
+        if not job_id:
+            raise NotFoundError("No preview job found for this assessment")
+        return build_grading_job(request, job_id)

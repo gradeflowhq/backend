@@ -1,0 +1,48 @@
+import time
+
+import httpx
+from gradeflow_engine.core import run_pipeline
+
+from gradeflow_backend.executors.base import GradingJobExecutor
+from gradeflow_backend.executors.registry import register
+from gradeflow_backend.schemas.grading import GradingJobResult, GradingJobSpec, JobStatus
+
+REQUEST_TIMEOUT_S = 10
+
+
+class SynchronousJobExecutor(GradingJobExecutor):
+    def submit(self, spec: GradingJobSpec, callback_url: str) -> str:
+        pipeline_result = run_pipeline(
+            raw_submissions=spec.raw_submissions,
+            question_set=spec.question_set,
+            rubric=spec.rubric,
+            saver_name=None,
+        )
+
+        result = GradingJobResult(
+            assessment_id=spec.assessment_id,
+            type=spec.type,
+            graded_submissions=pipeline_result.graded_submissions,
+        )
+
+        resp = httpx.post(
+            callback_url, json=result.model_dump(mode="json"), timeout=REQUEST_TIMEOUT_S
+        )
+        resp.raise_for_status()
+
+        job_id = f"job_{int(time.time() * 1000)}_{spec.type}"
+        return job_id
+
+    def get_status(self, job_id: str) -> JobStatus:
+        return "completed"
+
+    def start(self) -> None:
+        return
+
+    def stop(self) -> None:
+        return
+
+
+@register("SYNCHRONOUS")
+def create_synchronous_executor() -> GradingJobExecutor:
+    return SynchronousJobExecutor()

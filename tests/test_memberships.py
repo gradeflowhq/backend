@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from gradeflow_backend.schemas.auth import TokenPairResponse
 from tests.helpers.api import ApiClient
 

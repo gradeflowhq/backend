@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from datetime import datetime
 from typing import TYPE_CHECKING
 
@@ -28,7 +26,7 @@ class User(Base):
     )
 
     # Association object links
-    assessment_links: Mapped[list[UserAssessment]] = relationship(
+    assessment_links: Mapped[list["UserAssessment"]] = relationship(
         "UserAssessment",
         back_populates="user",
         cascade="all, delete-orphan",
@@ -36,6 +34,6 @@ class User(Base):
     )
 
     # Association proxy to assessments (collection proxy, not a mapped column)
-    assessments: AssociationProxy[list[Assessment]] = association_proxy(
+    assessments: AssociationProxy[list["Assessment"]] = association_proxy(
         "assessment_links", "assessment"
     )

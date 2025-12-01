@@ -44,7 +44,7 @@ class ExecutorSettings(BaseModel):
 
     # Container-specific
     container_runtime: str = "docker"
-    container_image: str = "gradeflow-engine:0.1.0-dev"
+    container_image: str = "ghcr.io/gradeflowhq/gradeflow-engine:latest"
     container_workdir: str = "/local"
 
     # HTTP callback timeout for job result POSTs

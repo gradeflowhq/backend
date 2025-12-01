@@ -34,21 +34,41 @@ class ExecutorSettings(BaseModel):
     # Common
     engine_command: str = "gradeflow-engine"
 
-    # INMEMORY_CONTAINER | INMEMORY_SUBPROCESS | SYNCHRONOUS
-    job_executor: Literal["INMEMORY_CONTAINER", "INMEMORY_SUBPROCESS", "SYNCHRONOUS"] = (
-        "INMEMORY_SUBPROCESS"
-    )
-    job_timeout_s: int = 300
-    job_poll_interval_s: float = 1.0
-    job_num_workers: int = 4
+    # INMEMORY_CONTAINER | INMEMORY_SUBPROCESS | SYNCHRONOUS | NOMAD
+    executor: Literal["INMEMORY_CONTAINER", "INMEMORY_SUBPROCESS", "SYNCHRONOUS", "NOMAD"] = "NOMAD"
+    timeout_s: int = 300
+
+    # In-memory subprocess-specific
+    poll_interval_s: float = 1.0
+    num_workers: int = 4
 
     # Container-specific
-    job_container_runtime: str = "docker"
-    job_container_image: str = "gradeflow-engine:latest"
-    job_container_workdir: str = "/workspace"
+    container_runtime: str = "docker"
+    container_image: str = "gradeflow-engine:0.1.0-dev"
+    container_workdir: str = "/local"
 
     # HTTP callback timeout for job result POSTs
+    callback_base_url: str | None = Field(
+        default="http://host.docker.internal:8000",
+        description="Absolute base URL for job callbacks, e.g. https://api.example.com/ "
+        "(if unset, falls back to Request.base_url)",
+    )
     callback_timeout_s: int = 10
+
+    # Nomad-specific (host/port instead of full address)
+    nomad_host: str | None = Field(
+        default="host.docker.internal", description="Nomad HTTP host, e.g. 127.0.0.1"
+    )
+    nomad_port: int = Field(default=4646, description="Nomad HTTP port, default 4646")
+    nomad_token: str | None = Field(default=None, description="Nomad ACL token (optional)")
+    nomad_namespace: str | None = Field(default=None, description="Nomad namespace (optional)")
+    nomad_verify_tls: bool = Field(default=True, description="Verify TLS when talking to Nomad")
+    nomad_datacenters: list[str] = Field(
+        default_factory=lambda: ["dc1"],
+        description="Nomad datacenters to target for jobs",
+    )
+    nomad_cpu: int = Field(default=200, description="Nomad task CPU (MHz)")
+    nomad_memory_mb: int = Field(default=256, description="Nomad task memory (MB)")
 
 
 class AppSettings(BaseSettings):

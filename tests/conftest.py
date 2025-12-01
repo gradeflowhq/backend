@@ -23,10 +23,10 @@ def test_env() -> Generator[None, None, None]:
     settings.security.jwt_audience = "gradeflow-clients"
 
     # Executor: force synchronous, single worker, short timeouts for tests
-    settings.executor.job_executor = "SYNCHRONOUS"
-    settings.executor.job_num_workers = 1
-    settings.executor.job_timeout_s = 10
-    settings.executor.job_poll_interval_s = 0.1
+    settings.executor.executor = "SYNCHRONOUS"
+    settings.executor.num_workers = 1
+    settings.executor.timeout_s = 10
+    settings.executor.poll_interval_s = 0.1
 
     yield
     # No teardown required; pytest will end the session

@@ -11,7 +11,7 @@ _EXECUTOR_SINGLETON: GradingJobExecutor | None = None
 def _create_executor_from_settings() -> GradingJobExecutor:
     s = get_settings().executor
     # Map to registry names
-    executor_name = s.job_executor.upper()
+    executor_name = s.executor.upper()
     try:
         creator = get_creator(executor_name)
     except KeyError as e:

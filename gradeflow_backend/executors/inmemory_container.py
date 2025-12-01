@@ -3,13 +3,8 @@ import subprocess
 from pathlib import Path
 
 from gradeflow_backend.config import get_settings
-from gradeflow_backend.executors.inmemory_base import (
-    DEFAULT_CALLBACK_TIMEOUT_S,
-    DEFAULT_NUM_WORKERS,
-    DEFAULT_POLL_INTERVAL_S,
-    DEFAULT_TIMEOUT_S,
-    InMemoryBaseJobExecutor,
-)
+from gradeflow_backend.executors.base import GradingJobExecutor
+from gradeflow_backend.executors.inmemory_base import InMemoryBaseJobExecutor
 from gradeflow_backend.executors.registry import register
 
 logger = logging.getLogger(__name__)
@@ -25,17 +20,10 @@ def _build_container_command(
     image: str,
     host_workdir: Path,
     in_container_workdir: str,
-    submissions_csv: Path,
-    qset_yaml: Path,
-    rubric_yaml: Path,
-    out_yaml: Path,
 ) -> list[str]:
     """
     Build a container run command compatible with docker/podman.
-    Assumes runtime supports:
-      - run --rm
-      - -v host:container
-      - -w working_dir
+    Mounts host workdir into the container and runs the shared entrypoint.py.
     """
     return [
         runtime,
@@ -46,23 +34,8 @@ def _build_container_command(
         "-w",
         in_container_workdir,
         image,
-        "grade",
-        "--submissions",
-        str(Path(in_container_workdir) / submissions_csv.name),
-        "--submissions-loader",
-        "CSV",
-        "--question-set",
-        str(Path(in_container_workdir) / qset_yaml.name),
-        "--question-set-loader",
-        "YAML",
-        "--rubric",
-        str(Path(in_container_workdir) / rubric_yaml.name),
-        "--rubric-loader",
-        "YAML",
-        "--saver",
-        "YAML",
-        "--out",
-        str(Path(in_container_workdir) / out_yaml.name),
+        "python",
+        f"{in_container_workdir}/entrypoint.py",
     ]
 
 
@@ -73,10 +46,10 @@ class InMemoryContainerJobExecutor(InMemoryBaseJobExecutor):
         runtime: str = DEFAULT_RUNTIME,
         image: str = DEFAULT_IMAGE,
         container_workdir: str = DEFAULT_WORKDIR,
-        timeout_s: int = DEFAULT_TIMEOUT_S,
-        callback_timeout_s: int = DEFAULT_CALLBACK_TIMEOUT_S,
-        poll_interval_s: float = DEFAULT_POLL_INTERVAL_S,
-        num_workers: int = DEFAULT_NUM_WORKERS,
+        timeout_s: int = 300,
+        callback_timeout_s: int = 10,
+        poll_interval_s: float = 1.0,
+        num_workers: int = 4,
     ) -> None:
         super().__init__(
             timeout_s=timeout_s,
@@ -95,20 +68,60 @@ class InMemoryContainerJobExecutor(InMemoryBaseJobExecutor):
         submissions_csv: Path,
         qset_yaml: Path,
         rubric_yaml: Path,
+        entrypoint_py: Path,  # staged on host; container reads mounted copy
         out_path: Path,
+        callback_url: str,
+        assessment_id: str,
+        job_type: str,
     ) -> None:
+        """
+        Invoke the shared entrypoint inside a container, injecting GF_* env vars.
+        """
+        s = get_settings().executor
+        engine_bin = s.engine_command  # e.g., "gradeflow-engine"
+
         cmd = _build_container_command(
             runtime=self._runtime,
             image=self._image,
             host_workdir=workdir,
             in_container_workdir=self._container_workdir,
-            submissions_csv=submissions_csv,
-            qset_yaml=qset_yaml,
-            rubric_yaml=rubric_yaml,
-            out_yaml=out_path,
         )
+
+        # Inject environment via -e flags
+        env_flags = [
+            "-e",
+            f"GF_ASSESSMENT_ID={assessment_id}",
+            "-e",
+            f"GF_JOB_TYPE={job_type}",
+            "-e",
+            f"GF_WORKDIR={self._container_workdir}",
+            "-e",
+            f"GF_CALLBACK_URL={callback_url}",
+            "-e",
+            f"GF_TIMEOUT_S={self._timeout_s}",
+            "-e",
+            f"GF_CALLBACK_TIMEOUT_S={self._callback_timeout_s}",
+            "-e",
+            f"GF_ENGINE_BIN={engine_bin}",
+            "-e",
+            f"GF_SUBMISSIONS_PATH={self._container_workdir}/submissions.csv",
+            "-e",
+            f"GF_QSET_PATH={self._container_workdir}/question_set.yaml",
+            "-e",
+            f"GF_RUBRIC_PATH={self._container_workdir}/rubric.yaml",
+            "-e",
+            f"GF_OUT_PATH={self._container_workdir}/graded.yaml",
+        ]
+        # Insert env flags after 'run'
+        try:
+            run_idx = cmd.index("run")
+            cmd = cmd[: run_idx + 1] + env_flags + cmd[run_idx + 1 :]
+        except ValueError:
+            # Fallback if runtime doesn't have 'run' token in this position
+            cmd = cmd + env_flags
+
         logger.info(
-            "Invoking engine in container",
+            "Invoking engine in container via entrypoint",
             extra={
                 "runtime": self._runtime,
                 "image": self._image,
@@ -134,14 +147,14 @@ class InMemoryContainerJobExecutor(InMemoryBaseJobExecutor):
 
 
 @register("INMEMORY_CONTAINER")
-def create_executor() -> InMemoryContainerJobExecutor:
+def create_executor() -> GradingJobExecutor:
     s = get_settings().executor
     return InMemoryContainerJobExecutor(
-        runtime=s.job_container_runtime,
-        image=s.job_container_image,
-        container_workdir=s.job_container_workdir,
+        runtime=s.container_runtime,
+        image=s.container_image,
+        container_workdir=s.container_workdir,
+        timeout_s=s.timeout_s,
         callback_timeout_s=s.callback_timeout_s,
-        timeout_s=s.job_timeout_s,
-        poll_interval_s=s.job_poll_interval_s,
-        num_workers=s.job_num_workers,
+        poll_interval_s=s.poll_interval_s,
+        num_workers=s.num_workers,
     )

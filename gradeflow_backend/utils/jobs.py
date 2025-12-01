@@ -2,11 +2,12 @@ from urllib.parse import urljoin
 
 from fastapi import Request
 
+from gradeflow_backend.config import get_settings
 from gradeflow_backend.schemas.grading import GradingJob
 
 
 def build_callback_url(request: Request, token: str) -> str:
-    base = str(request.base_url)
+    base = (get_settings().executor.callback_base_url or str(request.base_url)).strip()
     return urljoin(base, f"jobs/callback/{token}")
 
 

@@ -1,44 +1,15 @@
 import logging
+import os
 import subprocess
+import sys
 from pathlib import Path
 
 from gradeflow_backend.config import get_settings
-from gradeflow_backend.executors.inmemory_base import (
-    InMemoryBaseJobExecutor,
-)
+from gradeflow_backend.executors.base import GradingJobExecutor
+from gradeflow_backend.executors.inmemory_base import InMemoryBaseJobExecutor
 from gradeflow_backend.executors.registry import register
 
 logger = logging.getLogger(__name__)
-
-
-# Reuse the same CLI arguments as before
-def _build_cli_command(
-    submissions_csv: Path,
-    qset_yaml: Path,
-    rubric_yaml: Path,
-    out_yaml: Path,
-) -> list[str]:
-    s = get_settings().executor
-    return [
-        s.engine_command,
-        "grade",
-        "--submissions",
-        str(submissions_csv),
-        "--submissions-loader",
-        "CSV",
-        "--question-set",
-        str(qset_yaml),
-        "--question-set-loader",
-        "YAML",
-        "--rubric",
-        str(rubric_yaml),
-        "--rubric-loader",
-        "YAML",
-        "--saver",
-        "YAML",
-        "--out",
-        str(out_yaml),
-    ]
 
 
 class InMemorySubprocessJobExecutor(InMemoryBaseJobExecutor):
@@ -49,37 +20,68 @@ class InMemorySubprocessJobExecutor(InMemoryBaseJobExecutor):
         submissions_csv: Path,
         qset_yaml: Path,
         rubric_yaml: Path,
+        entrypoint_py: Path,
         out_path: Path,
+        callback_url: str,
+        assessment_id: str,
+        job_type: str,
     ) -> None:
-        cmd = _build_cli_command(submissions_csv, qset_yaml, rubric_yaml, out_path)
+        """
+        Invoke the shared entrypoint in a local Python subprocess, passing GF_* env vars.
+        """
+        s = get_settings().executor
+        engine_bin = s.engine_command
+
+        env = {
+            **os.environ,
+            # identity and callback
+            "GF_ASSESSMENT_ID": assessment_id,
+            "GF_JOB_TYPE": job_type,
+            "GF_CALLBACK_URL": callback_url,
+            # execution and timeouts
+            "GF_WORKDIR": str(workdir),
+            "GF_TIMEOUT_S": str(self._timeout_s),
+            "GF_CALLBACK_TIMEOUT_S": str(self._callback_timeout_s),
+            # explicit paths to avoid drift
+            "GF_ENGINE_BIN": engine_bin,
+            "GF_SUBMISSIONS_PATH": str(submissions_csv),
+            "GF_QSET_PATH": str(qset_yaml),
+            "GF_RUBRIC_PATH": str(rubric_yaml),
+            "GF_OUT_PATH": str(out_path),
+        }
+
         logger.info(
-            "Invoking engine CLI",
-            extra={"cmd": cmd, "timeout_s": self._timeout_s, "workdir": str(workdir)},
+            "Invoking engine via entrypoint (subprocess)",
+            extra={
+                "workdir": str(workdir),
+                "timeout_s": self._timeout_s,
+                "entrypoint": str(entrypoint_py),
+                "callback": callback_url,
+            },
         )
+
         completed = subprocess.run(
-            cmd,
+            [sys.executable, str(entrypoint_py)],
+            cwd=workdir,
+            env=env,
             capture_output=True,
             text=True,
             timeout=self._timeout_s,
             check=False,
         )
-        logger.info(
-            "Engine CLI completed",
-            extra={"returncode": completed.returncode},
-        )
+        logger.info("Entrypoint completed", extra={"returncode": completed.returncode})
         if completed.returncode != 0:
-            # Emit stdout/stderr at debug to avoid noisy logs by default
-            logger.debug("Engine stdout", extra={"stdout": completed.stdout[:4000]})
-            logger.debug("Engine stderr", extra={"stderr": completed.stderr[:4000]})
-            raise RuntimeError(f"CLI failed: {completed.stdout} {completed.stderr}")
+            logger.debug("Entrypoint stdout", extra={"stdout": completed.stdout[:4000]})
+            logger.debug("Entrypoint stderr", extra={"stderr": completed.stderr[:4000]})
+            raise RuntimeError(f"Entrypoint failed: {completed.stdout} {completed.stderr}")
 
 
 @register("INMEMORY_SUBPROCESS")
-def create_executor() -> InMemorySubprocessJobExecutor:
+def create_executor() -> GradingJobExecutor:
     s = get_settings().executor
     return InMemorySubprocessJobExecutor(
-        timeout_s=s.job_timeout_s,
-        poll_interval_s=s.job_poll_interval_s,
-        num_workers=s.job_num_workers,
+        timeout_s=s.timeout_s,
+        poll_interval_s=s.poll_interval_s,
+        num_workers=s.num_workers,
         callback_timeout_s=s.callback_timeout_s,
     )

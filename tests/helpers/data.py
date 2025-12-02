@@ -24,6 +24,9 @@ question_map:
   q4:
     type: MULTI_VALUED
     description: "Two-part answer"
+    value_types:
+      - TEXT
+      - TEXT
     config:
       delimiter: "|"
       trim_whitespace: true

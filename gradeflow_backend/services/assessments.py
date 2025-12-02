@@ -1,3 +1,5 @@
+import builtins
+
 from sqlalchemy.exc import NoResultFound
 
 from gradeflow_backend.repositories.assessments import AssessmentRepository
@@ -72,3 +74,16 @@ class AssessmentService:
             self.repo.delete(assessment_id)
         except NoResultFound as e:
             raise NotFoundError("Assessment not found") from e
+
+    def list_for_user(self, user_id: str) -> builtins.list[AssessmentResponse]:
+        items = self.memberships.list_user_assessments(user_id)
+        return [
+            AssessmentResponse(
+                id=a.id,
+                name=a.name,
+                description=a.description,
+                created_at=a.created_at.isoformat(),
+                updated_at=a.updated_at.isoformat(),
+            )
+            for a in items
+        ]

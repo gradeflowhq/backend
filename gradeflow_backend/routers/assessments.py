@@ -35,7 +35,7 @@ def list_assessments(
     svc: AssessmentService = Depends(get_service),
     _user: str = Depends(get_current_user_id),
 ) -> AssessmentsListResponse:
-    items = svc.list()
+    items = svc.list_for_user(_user)
     return AssessmentsListResponse(items=items)
 
 

@@ -118,5 +118,8 @@ class QuestionSetService:
                 )
             raw_subs = req.raw_submissions
 
-        submissions = qset.parse(raw_subs)
+        try:
+            submissions = qset.parse(raw_subs)
+        except ValueError as e:
+            raise BadRequestError(f"Failed to parse submissions: {e}") from e
         return ParseSubmissionsResponse(submissions=submissions)

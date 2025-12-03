@@ -232,6 +232,7 @@ class GradingService:
             target.adjusted_feedback = (
                 adj.adjusted_feedback if adj.adjusted_feedback is not None else None
             )
+            target.graded = True
 
         payload = [gs.model_dump() for gs in graded]
         self.repo.set_graded_yaml(assessment_id, yaml.safe_dump(payload))

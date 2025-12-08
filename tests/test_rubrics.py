@@ -8,7 +8,7 @@ def test_rubric_set_get_validate_delete(api: ApiClient) -> None:
     created = api.create_assessment("Midterm")
     api.set_question_set_yaml(created.id, QUESTION_SET_YAML)
 
-    # Set rubric
+    # Set rubric (serializer-based upload)
     rub = api.set_rubric_yaml(created.id, RUBRIC_YAML)
     assert rub.rubric is not None
 
@@ -71,3 +71,35 @@ def test_rubric_coverage_inline(api: ApiClient) -> None:
     assert cov.percentage == 1.0
     assert set(cov.question_ids) == {"q1", "q2", "q3", "q4"}
     assert set(cov.covered_question_ids) == {"q1", "q2", "q3", "q4"}
+
+
+def test_rubric_import_examplify_adapter_and_validate(api: ApiClient) -> None:
+    created = api.create_assessment("Rubric Import via Adapter")
+
+    # Import a matching QuestionSet via adapter (Choice Q1 with A,B)
+    examplify_qset_csv = (
+        "Seq,Type,Item Text,Original Answer,Adjusted Answer,ThrowOut\n"
+        "1,Choice,Pick letters,A,B,FALSE\n"
+    )
+    _ = api.import_question_set(
+        created.id,
+        data=examplify_qset_csv,
+        adapter={"name": "examplify"},
+    )
+
+    # Minimal Examplify-like rubric CSV for the same Q1: correct answer A, 1.5 points
+    examplify_rubric_csv = (
+        "Seq,Type,Original Answer,Adjusted Answer,Adjusted Points,GiveFullCreditToAllETs,ThrowOut\n"
+        "1,Choice,A,,1.5,FALSE,FALSE\n"
+    )
+
+    _ = api.import_rubric(
+        created.id,
+        data=examplify_rubric_csv,
+        adapter={"name": "examplify"},
+    )
+
+    # Validate rubric against stored question set
+    val = api.validate_rubric(created.id)
+    assert isinstance(val.errors, list)
+    assert len(val.errors) == 0, f"Unexpected validation errors: {val.errors}"

@@ -1,21 +1,25 @@
 import yaml
-from gradeflow_engine.core import load_rubric
-from gradeflow_engine.question_sets.model import QuestionSet
-from gradeflow_engine.rubrics.model import Rubric
+from gradeflow_engine.core import (
+    load_question_set_from_blob,
+    load_rubric_from_blob,
+    load_rubric_via_adapter,
+)
 from sqlalchemy.exc import NoResultFound
 
 from gradeflow_backend.repositories.assessments import AssessmentRepository
 from gradeflow_backend.schemas.rubrics import (
     CoverageRequest,
     CoverageResponse,
+    ImportRubricRequest,
+    LoadRubricRequest,
     RubricResponse,
-    SetRubricByDataRequest,
     SetRubricByModelRequest,
     ValidateRubricRequest,
     ValidateRubricResponse,
 )
 from gradeflow_backend.services.exceptions import BadRequestError, NotFoundError
 from gradeflow_backend.utils.engine import model_dump_minimal
+from gradeflow_backend.utils.io import blob_from_str, source_from_data
 
 
 class RubricService:
@@ -29,8 +33,30 @@ class RubricService:
             raise NotFoundError("Assessment not found") from e
         return RubricResponse(rubric=req.rubric)
 
-    def set_by_data(self, assessment_id: str, req: SetRubricByDataRequest) -> RubricResponse:
-        rubric = load_rubric(req.data, loader_name=req.loader_name)
+    def set_by_data(self, assessment_id: str, req: LoadRubricRequest) -> RubricResponse:
+        blob_in = blob_from_str(
+            req.data,
+            media_type="application/octet-stream",
+            ext=req.serializer.format,
+        )
+        rubric = load_rubric_from_blob(
+            blob_in,
+            serializer_name=req.serializer.format,
+            serializer_kwargs=req.serializer.model_dump(exclude={"format"}),
+        )
+        try:
+            self.repo.set_rubric_yaml(assessment_id, yaml.safe_dump(model_dump_minimal(rubric)))
+        except NoResultFound as e:
+            raise NotFoundError("Assessment not found") from e
+        return RubricResponse(rubric=rubric)
+
+    def set_by_adapter(self, assessment_id: str, req: ImportRubricRequest) -> RubricResponse:
+        src = source_from_data(req.data)
+        rubric = load_rubric_via_adapter(
+            src,
+            adapter_name=req.adapter.name,
+            adapter_kwargs=req.adapter.model_dump(exclude={"name"}),
+        )
         try:
             self.repo.set_rubric_yaml(assessment_id, yaml.safe_dump(model_dump_minimal(rubric)))
         except NoResultFound as e:
@@ -39,12 +65,13 @@ class RubricService:
 
     def get(self, assessment_id: str) -> RubricResponse:
         try:
-            yaml_str = self.repo.get_rubric_yaml(assessment_id)
+            data = self.repo.get_rubric_yaml(assessment_id)
         except NoResultFound as e:
             raise NotFoundError("Assessment not found") from e
-        if not yaml_str:
+        if not data:
             raise NotFoundError("Rubric not set")
-        rubric = Rubric.model_validate(yaml.safe_load(yaml_str))
+        blob = blob_from_str(data, media_type="application/yaml", ext="yaml")
+        rubric = load_rubric_from_blob(blob, serializer_name="yaml")
         return RubricResponse(rubric=rubric)
 
     def delete(self, assessment_id: str) -> None:
@@ -60,20 +87,22 @@ class RubricService:
             raise NotFoundError("Assessment not found") from e
 
         if req.use_stored_rubric:
-            rubric_yaml = a.rubric_yaml
-            if not rubric_yaml:
+            data = a.rubric_yaml
+            if not data:
                 raise NotFoundError("Rubric not set")
-            rubric = Rubric.model_validate(yaml.safe_load(rubric_yaml))
+            rubric_blob = blob_from_str(data, media_type="application/yaml", ext="yaml")
+            rubric = load_rubric_from_blob(rubric_blob, serializer_name="yaml")
         else:
             if req.rubric is None:
                 raise BadRequestError("rubric must be provided when use_stored_rubric=false")
             rubric = req.rubric
 
         if req.use_stored_question_set:
-            qset_yaml = a.question_set_yaml
-            if not qset_yaml:
+            qset_data = a.question_set_yaml
+            if not qset_data:
                 raise NotFoundError("Question set not set")
-            qset = QuestionSet.model_validate(yaml.safe_load(qset_yaml))
+            qset_blob = blob_from_str(qset_data, media_type="application/yaml", ext="yaml")
+            qset = load_question_set_from_blob(qset_blob, serializer_name="yaml")
         else:
             if req.question_set is None:
                 raise BadRequestError(
@@ -91,20 +120,22 @@ class RubricService:
             raise NotFoundError("Assessment not found") from e
 
         if req.use_stored_rubric:
-            rubric_yaml = a.rubric_yaml
-            if not rubric_yaml:
+            data = a.rubric_yaml
+            if not data:
                 raise NotFoundError("Rubric not set")
-            rubric = Rubric.model_validate(yaml.safe_load(rubric_yaml))
+            rubric_blob = blob_from_str(data, media_type="application/yaml", ext="yaml")
+            rubric = load_rubric_from_blob(rubric_blob, serializer_name="yaml")
         else:
             if req.rubric is None:
                 raise BadRequestError("rubric must be provided when use_stored_rubric=false")
             rubric = req.rubric
 
         if req.use_stored_question_set:
-            qset_yaml = a.question_set_yaml
-            if not qset_yaml:
+            qset_data = a.question_set_yaml
+            if not qset_data:
                 raise NotFoundError("Question set not set")
-            qset = QuestionSet.model_validate(yaml.safe_load(qset_yaml))
+            qset_blob = blob_from_str(qset_data, media_type="application/yaml", ext="yaml")
+            qset = load_question_set_from_blob(qset_blob, serializer_name="yaml")
         else:
             if req.question_set is None:
                 raise BadRequestError(

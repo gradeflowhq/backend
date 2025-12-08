@@ -68,7 +68,14 @@ class ExecutorSettings(BaseModel):
         description="Nomad datacenters to target for jobs",
     )
     nomad_cpu: int = Field(default=200, description="Nomad task CPU (MHz)")
-    nomad_memory_mb: int = Field(default=256, description="Nomad task memory (MB)")
+    nomad_memory_mb: int = Field(default=512, description="Nomad task memory (MB)")
+
+
+class GradingSettings(BaseModel):
+    max_submission_preview: int = Field(
+        default=20,
+        description="Maximum allowed submissions to preview when no limit is set by the user.",
+    )
 
 
 class AppSettings(BaseSettings):
@@ -84,6 +91,7 @@ class AppSettings(BaseSettings):
     database: DatabaseSettings = DatabaseSettings()
     cors: CorsSettings = CorsSettings()
     executor: ExecutorSettings = ExecutorSettings()
+    grading: GradingSettings = GradingSettings()
 
 
 @lru_cache(maxsize=1)

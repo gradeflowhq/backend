@@ -3,11 +3,11 @@ from tests.helpers.data import QUESTION_SET_YAML, RUBRIC_YAML, SUBMISSIONS_CSV
 
 
 def _rule_exact_match_q1() -> dict[str, object]:
-    # Preview a single EXACT_MATCH rule targeting q1
+    # Preview a single TEXT_MATCH rule targeting q1
     return {
-        "type": "EXACT_MATCH",
+        "type": "TEXT_MATCH",
         "question_id": "q1",
-        "answer": "Alice",
+        "answers": ["Alice"],
         "max_points": 1.0,
     }
 
@@ -27,10 +27,10 @@ def test_grading_flow(api: ApiClient) -> None:
         graded = api.get_grading(created.id)
         assert len(graded.graded_submissions) >= 1
 
-        # Export graded results (pre-adjustment)
-        export = api.export_grading(created.id)
-        assert export.filename.endswith(".csv")
-        assert isinstance(export.data, str)
+        # Download graded results (pre-adjustment)
+        dl = api.download_grading(created.id)
+        assert dl.filename.endswith(".csv")
+        assert isinstance(dl.data, (bytes, bytearray))
 
         # Adjustments: within bounds should succeed
         adjustments: list[dict[str, object]] = [
@@ -64,10 +64,10 @@ def test_grading_flow(api: ApiClient) -> None:
         assert r_s1_q2.adjusted_points == 1.5
         assert r_s1_q2.adjusted_feedback == "Partial credit for score."
 
-        # Export graded results after adjustment should reflect adjusted totals
-        export_after = api.export_grading(created.id)
-        assert export_after.filename.endswith(".csv")
-        csv_out = export_after.data
+        # Download graded results after adjustment should reflect adjusted totals
+        dl_after = api.download_grading(created.id)
+        assert dl_after.filename.endswith(".csv")
+        csv_out = dl_after.data.decode("utf-8", errors="replace")
         # With the full rubric (q1, q2, q3, q4), totals after adjustment are:
         # - s1: q1=1.0 (unchanged), q2=1.5 (adjusted),
         #       q3=1.5 (A correct), q4=2.0 (1|a correct) → total 6.0

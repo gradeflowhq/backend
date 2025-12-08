@@ -37,13 +37,14 @@ question_map:
 # - Top-level key: rules
 # - Each rule is a discriminated union by "type"
 #   Here we use:
-#   - EXACT_MATCH for q1 (expects exact text "Alice")
+#   - TEXT_MATCH for q1 (expects exact text "Alice")
 #   - NUMERIC_RANGE for q2 (expects 0 <= score <= 100)
 RUBRIC_YAML: str = """
 rules:
-  - type: EXACT_MATCH
+  - type: TEXT_MATCH
     question_id: q1
-    answer: "Alice"
+    answers:
+      - "Alice"
     max_points: 1.0
   - type: NUMERIC_RANGE
     question_id: q2
@@ -58,12 +59,14 @@ rules:
   - type: MULTI_VALUED
     question_id: q4
     rules:
-      - type: EXACT_MATCH
+      - type: TEXT_MATCH
         question_id: q4_1
-        answer: "1"
-      - type: EXACT_MATCH
+        answers:
+          - "1"
+      - type: TEXT_MATCH
         question_id: q4_2
-        answer: "a"
+        answers:
+          - "a"
     aggregation: ALL
     max_points: 2.0
 """

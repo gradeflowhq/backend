@@ -69,18 +69,18 @@ def _run_engine_cli(
         "grade",
         "--submissions",
         str(submissions_csv),
-        "--submissions-loader",
-        "CSV",
+        "--raw-submissions-adapter",
+        "csv",
         "--question-set",
         str(qset_yaml),
-        "--question-set-loader",
-        "YAML",
+        "--question-set-serializer",
+        "yaml",
         "--rubric",
         str(rubric_yaml),
-        "--rubric-loader",
-        "YAML",
-        "--saver",
-        "YAML",
+        "--rubric-serializer",
+        "yaml",
+        "--out-serializer",
+        "yaml",
         "--out",
         str(out_yaml),
     ]
@@ -101,7 +101,6 @@ def _run_engine_cli(
 
 def main() -> int:
     try:
-        # loads from env GF_*
         cfg = Config()  # type: ignore[call-arg]
     except ValidationError as e:
         sys.stderr.write("[entrypoint] Invalid environment configuration:\n")

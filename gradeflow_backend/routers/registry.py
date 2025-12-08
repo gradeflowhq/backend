@@ -1,35 +1,52 @@
 from fastapi import APIRouter
 from gradeflow_engine.core import (
-    list_available_question_set_loaders,
-    list_available_question_set_savers,
-    list_available_rubric_loaders,
-    list_available_submissions_loaders,
-    list_available_submissions_savers,
+    list_available_graded_submissions_serializers,
+    list_available_question_set_adapters,
+    # Serializers
+    list_available_question_set_serializers,
+    # Adapters
+    list_available_raw_submissions_adapters,
+    list_available_rubric_adapters,
+    list_available_rubric_serializers,
 )
 
 router = APIRouter(prefix="/registry", tags=["registry"])
 
-
-@router.get("/question-set-loaders")
-def question_set_loaders() -> list[str]:
-    return list_available_question_set_loaders()
-
-
-@router.get("/question-set-savers")
-def question_set_savers() -> list[str]:
-    return list_available_question_set_savers()
+# ---------------------------
+# Serializers
+# ---------------------------
 
 
-@router.get("/rubric-loaders")
-def rubric_loaders() -> list[str]:
-    return list_available_rubric_loaders()
+@router.get("/serializers/question-sets")
+def question_set_serializers() -> list[str]:
+    return list_available_question_set_serializers()
 
 
-@router.get("/submissions-loaders")
-def submissions_loaders() -> list[str]:
-    return list_available_submissions_loaders()
+@router.get("/serializers/rubrics")
+def rubric_serializers() -> list[str]:
+    return list_available_rubric_serializers()
 
 
-@router.get("/submissions-savers")
-def submissions_savers() -> list[str]:
-    return list_available_submissions_savers()
+@router.get("/serializers/graded-submissions")
+def graded_submissions_serializers() -> list[str]:
+    return list_available_graded_submissions_serializers()
+
+
+# ---------------------------
+# Adapters
+# ---------------------------
+
+
+@router.get("/adapters/raw-submissions")
+def raw_submissions_adapters() -> list[str]:
+    return list_available_raw_submissions_adapters()
+
+
+@router.get("/adapters/question-sets")
+def question_set_adapters() -> list[str]:
+    return list_available_question_set_adapters()
+
+
+@router.get("/adapters/rubrics")
+def rubric_adapters() -> list[str]:
+    return list_available_rubric_adapters()

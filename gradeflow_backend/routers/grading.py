@@ -6,8 +6,8 @@ from gradeflow_backend.dependencies.memberships import member_guard_factory, rol
 from gradeflow_backend.repositories.assessments import AssessmentRepository
 from gradeflow_backend.schemas.grading import (
     GradeAdjustmentRequest,
-    GradingExportRequest,
-    GradingExportResponse,
+    GradingDownloadRequest,
+    GradingDownloadResponse,
     GradingJob,
     GradingPreviewRequest,
     GradingResponse,
@@ -68,14 +68,14 @@ def adjust_grading(
     return svc.adjust(assessment_id, req)
 
 
-@router.post("/export", response_model=GradingExportResponse, status_code=status.HTTP_200_OK)
-def export_grading(
+@router.post("/download", response_model=GradingDownloadResponse, status_code=status.HTTP_200_OK)
+def download_grading(
     assessment_id: str,
-    req: GradingExportRequest,
+    req: GradingDownloadRequest,
     svc: GradingService = Depends(get_service),
     _u: str = Depends(member_guard_factory()),
-) -> GradingExportResponse:
-    return svc.export(assessment_id, req)
+) -> GradingDownloadResponse:
+    return svc.download(assessment_id, req)
 
 
 @router.delete("", status_code=status.HTTP_204_NO_CONTENT)

@@ -7,8 +7,9 @@ from gradeflow_backend.repositories.assessments import AssessmentRepository
 from gradeflow_backend.schemas.rubrics import (
     CoverageRequest,
     CoverageResponse,
+    ImportRubricRequest,
+    LoadRubricRequest,
     RubricResponse,
-    SetRubricByDataRequest,
     SetRubricByModelRequest,
     ValidateRubricRequest,
     ValidateRubricResponse,
@@ -41,14 +42,24 @@ def set_rubric_by_model(
     return svc.set_by_model(assessment_id, req)
 
 
-@router.put("/load", response_model=RubricResponse, status_code=status.HTTP_200_OK)
+@router.put("/upload", response_model=RubricResponse, status_code=status.HTTP_200_OK)
 def set_rubric_by_data(
     assessment_id: str,
-    req: SetRubricByDataRequest,
+    req: LoadRubricRequest,
     svc: RubricService = Depends(get_service),
     _u: str = Depends(role_guard_factory("editor")),
 ) -> RubricResponse:
     return svc.set_by_data(assessment_id, req)
+
+
+@router.put("/import", response_model=RubricResponse, status_code=status.HTTP_200_OK)
+def import_rubric(
+    assessment_id: str,
+    req: ImportRubricRequest,
+    svc: RubricService = Depends(get_service),
+    _u: str = Depends(role_guard_factory("editor")),
+) -> RubricResponse:
+    return svc.set_by_adapter(assessment_id, req)
 
 
 @router.post("/validate", response_model=ValidateRubricResponse, status_code=status.HTTP_200_OK)

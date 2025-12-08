@@ -1,12 +1,16 @@
-from typing import Any, Literal
+from typing import Literal
 
 from gradeflow_engine.question_sets.model import QuestionSet
 from gradeflow_engine.rubrics.model import Rubric
 from gradeflow_engine.rules.models import QuestionRule
 from gradeflow_engine.rules.result import QuestionResult
+from gradeflow_engine.serializations.graded_submissions import GradedSubmissionsSerializerConfig
 from gradeflow_engine.submissions.models import GradedSubmission, RawSubmission, Submission
-from gradeflow_engine.submissions.savers.base import SubmissionsSaverOutput
 from pydantic import BaseModel, Field
+
+from gradeflow_backend.config import get_settings
+
+grading_settings = get_settings().grading
 
 
 class AdjustableQuestionResult(QuestionResult):
@@ -30,13 +34,15 @@ class GradingResponse(BaseModel):
     graded_submissions: list[AdjustableGradedSubmission]
 
 
-class GradingExportRequest(BaseModel):
-    saver_name: Literal["CSV"] = "CSV"
-    submissions_saver_kwargs: dict[str, Any] | None = None
+class GradingDownloadRequest(BaseModel):
+    serializer: GradedSubmissionsSerializerConfig  # discriminated by "format" (csv|json|yaml)
 
 
-class GradingExportResponse(SubmissionsSaverOutput):
+class GradingDownloadResponse(BaseModel):
     filename: str
+    data: bytes
+    extension: str
+    media_type: str  # e.g. "text/csv" | "application/json" | "application/yaml"
 
 
 class GradeAdjustment(BaseModel):
@@ -53,6 +59,8 @@ class GradeAdjustmentRequest(BaseModel):
 class GradingLimitConfig(BaseModel):
     limit: int | None = Field(
         default=5,
+        ge=1,
+        le=grading_settings.max_submission_preview,
         description="If provided, preview only this many submissions.",
     )
     selection: Literal["first", "random"] = Field(

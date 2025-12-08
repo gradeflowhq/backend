@@ -2,7 +2,11 @@ import random
 
 import yaml
 from fastapi import Request
-from gradeflow_engine.core import save_graded_submissions
+from gradeflow_engine.core import (
+    dump_graded_submissions_to_blob,
+    load_question_set_from_blob,
+    load_rubric_from_blob,
+)
 from gradeflow_engine.question_sets.model import QuestionSet
 from gradeflow_engine.rubrics.model import Rubric
 from gradeflow_engine.rules.models import QuestionRule
@@ -16,8 +20,8 @@ from gradeflow_backend.schemas.grading import (
     AdjustableGradedSubmission,
     AdjustableQuestionResult,
     GradeAdjustmentRequest,
-    GradingExportRequest,
-    GradingExportResponse,
+    GradingDownloadRequest,
+    GradingDownloadResponse,
     GradingJob,
     GradingJobSpec,
     GradingLimitConfig,
@@ -32,6 +36,7 @@ from gradeflow_backend.services.exceptions import (
     RubricValidationError,
 )
 from gradeflow_backend.services.jobs import JobsService
+from gradeflow_backend.utils.io import blob_from_str
 from gradeflow_backend.utils.jobs import build_grading_job
 
 
@@ -49,20 +54,22 @@ class GradingService:
         except NoResultFound as e:
             raise NotFoundError("Assessment not found") from e
 
-    def _load_question_set_yaml(self, yaml_str: str | None) -> QuestionSet:
-        if not yaml_str:
+    def _load_question_set(self, data: str | None) -> QuestionSet:
+        if not data:
             raise NotFoundError("Question set not set")
-        return QuestionSet.model_validate(yaml.safe_load(yaml_str))
+        blob = blob_from_str(data, media_type="application/yaml", ext="yaml")
+        return load_question_set_from_blob(blob, serializer_name="yaml")
 
-    def _load_rubric_yaml(self, yaml_str: str | None) -> Rubric:
-        if not yaml_str:
+    def _load_rubric(self, data: str | None) -> Rubric:
+        if not data:
             raise NotFoundError("Rubric not set")
-        return Rubric.model_validate(yaml.safe_load(yaml_str))
+        blob = blob_from_str(data, media_type="application/yaml", ext="yaml")
+        return load_rubric_from_blob(blob, serializer_name="yaml")
 
-    def _load_raw_submissions_yaml(self, yaml_str: str | None) -> list[RawSubmission]:
-        if not yaml_str:
+    def _load_raw_submissions_yaml(self, data: str | None) -> list[RawSubmission]:
+        if not data:
             raise NotFoundError("Submissions not set")
-        items: list[dict[str, object]] = yaml.safe_load(yaml_str)
+        items: list[dict[str, object]] = yaml.safe_load(data) or []
         return [RawSubmission.model_validate(obj) for obj in items]
 
     def _validate_or_raise(self, rubric: Rubric, qset: QuestionSet) -> None:
@@ -104,11 +111,10 @@ class GradingService:
         config: GradingLimitConfig | None = None,
     ) -> GradingJob:
         a = self._get_assessment(assessment_id)
-        qset = self._load_question_set_yaml(a.question_set_yaml)
+        qset = self._load_question_set(a.question_set_yaml)
         raw_subs = self._load_raw_submissions_yaml(a.submissions_yaml)
 
-        # If a single rule is provided, build a transient rubric; else use stored
-        rubric = Rubric(rules=[rule]) if rule is not None else self._load_rubric_yaml(a.rubric_yaml)
+        rubric = Rubric(rules=[rule]) if rule is not None else self._load_rubric(a.rubric_yaml)
 
         self._validate_or_raise(rubric, qset)
 
@@ -176,7 +182,7 @@ class GradingService:
             raise NotFoundError("Assessment not found") from e
         if not graded_yaml:
             return GradingResponse(graded_submissions=[])
-        items: list[dict[str, object]] = yaml.safe_load(graded_yaml)
+        items: list[dict[str, object]] = yaml.safe_load(graded_yaml) or []
         adjustable = [AdjustableGradedSubmission.model_validate(obj) for obj in items]
         return GradingResponse(graded_submissions=adjustable)
 
@@ -203,7 +209,7 @@ class GradingService:
         if not graded_yaml:
             raise BadRequestError("No graded results to adjust. Run grading first.")
 
-        items: list[dict[str, object]] = yaml.safe_load(graded_yaml)
+        items: list[dict[str, object]] = yaml.safe_load(graded_yaml) or []
         graded = [AdjustableGradedSubmission.model_validate(obj) for obj in items]
 
         index: dict[tuple[str, str], AdjustableQuestionResult] = {}
@@ -238,16 +244,16 @@ class GradingService:
         self.repo.set_graded_yaml(assessment_id, yaml.safe_dump(payload))
         return GradingResponse(graded_submissions=graded)
 
-    def export(self, assessment_id: str, req: GradingExportRequest) -> GradingExportResponse:
+    def download(self, assessment_id: str, req: GradingDownloadRequest) -> GradingDownloadResponse:
         a = self._get_assessment(assessment_id)
         graded_yaml = a.graded_submissions_yaml
         if not graded_yaml:
-            raise BadRequestError("No graded results to export. Run grading first.")
+            raise BadRequestError("No graded results to download. Run grading first.")
 
-        items: list[dict[str, object]] = yaml.safe_load(graded_yaml)
+        items: list[dict[str, object]] = yaml.safe_load(graded_yaml) or []
         adjustable = [AdjustableGradedSubmission.model_validate(obj) for obj in items]
 
-        exportable: list[GradedSubmission] = []
+        downloadable: list[GradedSubmission] = []
         for ags in adjustable:
             converted_results: list[QuestionResult] = []
             for r in ags.results:
@@ -264,23 +270,31 @@ class GradingService:
                         max_points=r.max_points,
                     )
                 )
-            exportable.append(
+            downloadable.append(
                 GradedSubmission(
-                    student_id=ags.student_id, answer_map=ags.answer_map, results=converted_results
+                    student_id=ags.student_id,
+                    answer_map=ags.answer_map,
+                    results=converted_results,
                 )
             )
 
-        out = save_graded_submissions(
-            graded_submissions=exportable,
-            saver_name=req.saver_name,
-            **(req.submissions_saver_kwargs or {}),
+        out = dump_graded_submissions_to_blob(
+            downloadable,
+            serializer_name=req.serializer.format,
+            serializer_kwargs=req.serializer.model_dump(exclude={"format"}),
         )
 
         safe_assessment_name = "".join(
             c if c.isalnum() or c in (" ", "_", "-") else "_" for c in a.name
         ).rstrip()
         filename = f"graded_{safe_assessment_name}.{out.extension}"
-        return GradingExportResponse(data=out.data, extension=out.extension, filename=filename)
+
+        return GradingDownloadResponse(
+            filename=filename,
+            data=out.data,
+            extension=out.extension,
+            media_type=out.media_type,
+        )
 
     def get_preview(self, assessment_id: str) -> GradingResponse:
         try:
@@ -289,7 +303,7 @@ class GradingService:
             raise NotFoundError("Assessment not found") from e
         if not yaml_str:
             return GradingResponse(graded_submissions=[])
-        items: list[dict[str, object]] = yaml.safe_load(yaml_str)
+        items: list[dict[str, object]] = yaml.safe_load(yaml_str) or []
         adjustable = [AdjustableGradedSubmission.model_validate(obj) for obj in items]
         # Clear after retrieval
         self.repo.set_graded_preview_yaml(assessment_id, None)

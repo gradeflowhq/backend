@@ -1,19 +1,25 @@
 import yaml
-from gradeflow_engine.core import infer_question_set, load_question_set
+from gradeflow_engine.core import (
+    dump_question_set_to_blob,
+    load_question_set_from_blob,
+    load_question_set_via_adapter,
+)
 from gradeflow_engine.question_sets.model import QuestionSet
 from gradeflow_engine.submissions.models import RawSubmission
 from sqlalchemy.exc import NoResultFound
 
 from gradeflow_backend.repositories.assessments import AssessmentRepository
 from gradeflow_backend.schemas.question_sets import (
+    ImportQuestionSetRequest,
     InferQuestionSetRequest,
+    LoadQuestionSetRequest,
     ParseSubmissionsRequest,
     ParseSubmissionsResponse,
     QuestionSetResponse,
-    SetQuestionSetByDataRequest,
     SetQuestionSetByModelRequest,
 )
 from gradeflow_backend.services.exceptions import BadRequestError, NotFoundError
+from gradeflow_backend.utils.io import blob_from_str, source_from_data
 
 
 class QuestionSetService:
@@ -24,31 +30,56 @@ class QuestionSetService:
         self, assessment_id: str, req: SetQuestionSetByModelRequest
     ) -> QuestionSetResponse:
         try:
-            self.repo.set_question_set_yaml(
-                assessment_id, yaml.safe_dump(req.question_set.model_dump())
-            )
+            blob = dump_question_set_to_blob(req.question_set, serializer_name="yaml")
+            self.repo.set_question_set_yaml(assessment_id, blob.data.decode("utf-8"))
         except NoResultFound as e:
             raise NotFoundError("Assessment not found") from e
         return QuestionSetResponse(question_set=req.question_set)
 
-    def set_by_data(
-        self, assessment_id: str, req: SetQuestionSetByDataRequest
-    ) -> QuestionSetResponse:
-        qset = load_question_set(req.data, loader_name=req.loader_name)
+    def set_by_data(self, assessment_id: str, req: LoadQuestionSetRequest) -> QuestionSetResponse:
+        # Do not hardcode media types; let the engine serializer handle parsing by format
+        blob_in = blob_from_str(
+            req.data,
+            media_type="application/octet-stream",
+            ext=req.serializer.format,
+        )
+        qset = load_question_set_from_blob(
+            blob_in,
+            serializer_name=req.serializer.format,
+            serializer_kwargs=req.serializer.model_dump(exclude={"format"}),
+        )
         try:
-            self.repo.set_question_set_yaml(assessment_id, yaml.safe_dump(qset.model_dump()))
+            blob_out = dump_question_set_to_blob(qset, serializer_name="yaml")
+            self.repo.set_question_set_yaml(assessment_id, blob_out.data.decode("utf-8"))
+        except NoResultFound as e:
+            raise NotFoundError("Assessment not found") from e
+        return QuestionSetResponse(question_set=qset)
+
+    def set_by_adapter(
+        self, assessment_id: str, req: ImportQuestionSetRequest
+    ) -> QuestionSetResponse:
+        src = source_from_data(req.data)
+        qset = load_question_set_via_adapter(
+            src,
+            adapter_name=req.adapter.name,
+            adapter_kwargs=req.adapter.model_dump(exclude={"name"}),
+        )
+        try:
+            blob_out = dump_question_set_to_blob(qset, serializer_name="yaml")
+            self.repo.set_question_set_yaml(assessment_id, blob_out.data.decode("utf-8"))
         except NoResultFound as e:
             raise NotFoundError("Assessment not found") from e
         return QuestionSetResponse(question_set=qset)
 
     def get(self, assessment_id: str) -> QuestionSetResponse:
         try:
-            yaml_str = self.repo.get_question_set_yaml(assessment_id)
+            data = self.repo.get_question_set_yaml(assessment_id)
         except NoResultFound as e:
             raise NotFoundError("Assessment not found") from e
-        if not yaml_str:
+        if not data:
             raise NotFoundError("Question set not set")
-        qset = QuestionSet.model_validate(yaml.safe_load(yaml_str))
+        blob = blob_from_str(data, media_type="application/yaml", ext="yaml")
+        qset = load_question_set_from_blob(blob, serializer_name="yaml")
         return QuestionSetResponse(question_set=qset)
 
     def delete(self, assessment_id: str) -> None:
@@ -68,7 +99,7 @@ class QuestionSetService:
             subs_yaml = a.submissions_yaml
             if not subs_yaml:
                 raise NotFoundError("No submissions stored for this assessment")
-            items = yaml.safe_load(subs_yaml)
+            items = yaml.safe_load(subs_yaml) or []
             raw_subs = [RawSubmission.model_validate(obj) for obj in items]
         else:
             if not req.raw_submissions:
@@ -77,14 +108,15 @@ class QuestionSetService:
                 )
             raw_subs = req.raw_submissions
 
-        qset = infer_question_set(
-            raw_submissions=raw_subs,
+        qset = QuestionSet.infer(
+            raw_subs,
             choice_delimiter=req.choice_delimiter,
             choice_option_limit=req.choice_option_limit,
             multi_value_delimiter=req.multi_value_delimiter,
         )
         if req.commit:
-            self.repo.set_question_set_yaml(assessment_id, yaml.safe_dump(qset.model_dump()))
+            blob_out = dump_question_set_to_blob(qset, serializer_name="yaml")
+            self.repo.set_question_set_yaml(assessment_id, blob_out.data.decode("utf-8"))
         return QuestionSetResponse(question_set=qset)
 
     def parse(self, assessment_id: str, req: ParseSubmissionsRequest) -> ParseSubmissionsResponse:
@@ -94,10 +126,11 @@ class QuestionSetService:
             raise NotFoundError("Assessment not found") from e
 
         if req.use_stored_question_set:
-            qset_yaml = a.question_set_yaml
-            if not qset_yaml:
+            data = a.question_set_yaml
+            if not data:
                 raise NotFoundError("Question set not set")
-            qset = QuestionSet.model_validate(yaml.safe_load(qset_yaml))
+            blob = blob_from_str(data, media_type="application/yaml", ext="yaml")
+            qset = load_question_set_from_blob(blob, serializer_name="yaml")
         else:
             if req.question_set is None:
                 raise BadRequestError(
@@ -109,7 +142,7 @@ class QuestionSetService:
             subs_yaml = a.submissions_yaml
             if not subs_yaml:
                 raise NotFoundError("Submissions not set")
-            items = yaml.safe_load(subs_yaml)
+            items = yaml.safe_load(subs_yaml) or []
             raw_subs = [RawSubmission.model_validate(obj) for obj in items]
         else:
             if req.raw_submissions is None:

@@ -6,7 +6,7 @@ def test_submissions_crud(api: ApiClient) -> None:
     created = api.create_assessment("Midterm")
     api.set_question_set_yaml(created.id, QUESTION_SET_YAML)
 
-    # Load CSV submissions
+    # Import CSV submissions via adapter endpoint
     subs = api.set_submissions_csv(created.id, SUBMISSIONS_CSV)
     assert len(subs.raw_submissions) >= 1
 

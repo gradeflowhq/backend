@@ -5,11 +5,12 @@ from gradeflow_backend.db import get_session
 from gradeflow_backend.dependencies.memberships import member_guard_factory, role_guard_factory
 from gradeflow_backend.repositories.assessments import AssessmentRepository
 from gradeflow_backend.schemas.question_sets import (
+    ImportQuestionSetRequest,
     InferQuestionSetRequest,
+    LoadQuestionSetRequest,
     ParseSubmissionsRequest,
     ParseSubmissionsResponse,
     QuestionSetResponse,
-    SetQuestionSetByDataRequest,
     SetQuestionSetByModelRequest,
 )
 from gradeflow_backend.services.question_sets import QuestionSetService
@@ -40,14 +41,24 @@ def set_question_set_by_model(
     return svc.set_by_model(assessment_id, req)
 
 
-@router.put("/load", response_model=QuestionSetResponse, status_code=status.HTTP_200_OK)
+@router.put("/upload", response_model=QuestionSetResponse, status_code=status.HTTP_200_OK)
 def set_question_set_by_data(
     assessment_id: str,
-    req: SetQuestionSetByDataRequest,
+    req: LoadQuestionSetRequest,
     svc: QuestionSetService = Depends(get_service),
     _u: str = Depends(role_guard_factory("editor")),
 ) -> QuestionSetResponse:
     return svc.set_by_data(assessment_id, req)
+
+
+@router.put("/import", response_model=QuestionSetResponse, status_code=status.HTTP_200_OK)
+def import_question_set(
+    assessment_id: str,
+    req: ImportQuestionSetRequest,
+    svc: QuestionSetService = Depends(get_service),
+    _u: str = Depends(role_guard_factory("editor")),
+) -> QuestionSetResponse:
+    return svc.set_by_adapter(assessment_id, req)
 
 
 @router.post("/infer", response_model=QuestionSetResponse, status_code=status.HTTP_200_OK)

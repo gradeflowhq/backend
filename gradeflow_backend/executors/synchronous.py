@@ -2,12 +2,12 @@ import logging
 import time
 
 import httpx
-from gradeflow_engine.core import run_pipeline
 
 from gradeflow_backend.config import get_settings
 from gradeflow_backend.executors.base import GradingJobExecutor
 from gradeflow_backend.executors.registry import register
 from gradeflow_backend.schemas.grading import GradingJobResult, GradingJobSpec, JobStatus
+from gradeflow_backend.services.exceptions import RubricValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -20,39 +20,42 @@ class SynchronousJobExecutor(GradingJobExecutor):
             extra={"job_id": job_id, "assessment_id": spec.assessment_id, "type": spec.type},
         )
         t0 = time.perf_counter()
-        pipeline_result = run_pipeline(
-            raw_submissions=spec.raw_submissions,
-            question_set=spec.question_set,
-            rubric=spec.rubric,
-            saver_name=None,
-        )
-        dur = time.perf_counter() - t0
-        logger.info(
-            "Pipeline completed",
-            extra={
-                "job_id": job_id,
-                "duration_s": round(dur, 4),
-                "graded_count": len(pipeline_result.graded_submissions),
-            },
-        )
+        try:
+            # Parse submissions
+            submissions = spec.question_set.parse(spec.raw_submissions)
 
-        result = GradingJobResult(
-            assessment_id=spec.assessment_id,
-            type=spec.type,
-            graded_submissions=pipeline_result.graded_submissions,
-        )
+            # Validate rubric against question set
+            errors = spec.rubric.validate_rubric(spec.question_set)
+            if errors:
+                raise RubricValidationError(errors)
 
-        timeout_s = get_settings().executor.callback_timeout_s
-        logger.info(
-            "Posting callback",
-            extra={"job_id": job_id, "timeout_s": timeout_s},
-        )
-        resp = httpx.post(callback_url, json=result.model_dump(mode="json"), timeout=timeout_s)
-        logger.info(
-            "Callback response",
-            extra={"job_id": job_id, "status_code": resp.status_code},
-        )
-        resp.raise_for_status()
+            # Grade
+            graded_submissions = spec.rubric.grade(submissions, strict=False)
+
+            # Build result
+            result = GradingJobResult(
+                assessment_id=spec.assessment_id,
+                type=spec.type,
+                graded_submissions=graded_submissions,
+            )
+
+            # Post callback
+            timeout_s = get_settings().executor.callback_timeout_s
+            logger.info("Posting callback", extra={"job_id": job_id, "timeout_s": timeout_s})
+            resp = httpx.post(callback_url, json=result.model_dump(mode="json"), timeout=timeout_s)
+            logger.info(
+                "Callback response", extra={"job_id": job_id, "status_code": resp.status_code}
+            )
+            resp.raise_for_status()
+
+        except Exception:
+            logger.exception("Synchronous grading failed", extra={"job_id": job_id})
+        finally:
+            dur = time.perf_counter() - t0
+            logger.info(
+                "Synchronous job finished",
+                extra={"job_id": job_id, "duration_s": round(dur, 4)},
+            )
 
         return job_id
 

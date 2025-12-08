@@ -117,7 +117,6 @@ class InMemoryContainerJobExecutor(InMemoryBaseJobExecutor):
             run_idx = cmd.index("run")
             cmd = cmd[: run_idx + 1] + env_flags + cmd[run_idx + 1 :]
         except ValueError:
-            # Fallback if runtime doesn't have 'run' token in this position
             cmd = cmd + env_flags
 
         logger.info(

@@ -85,7 +85,7 @@ async def rubric_validation_handler(_: Request, exc: RubricValidationError) -> J
 
 @app.exception_handler(ValidationError)
 async def pydantic_validation_handler(_: Request, exc: ValidationError) -> JSONResponse:
-    messages = [e["msg"] for e in exc.errors()]  # extract error messages
+    messages = [str(e) for e in exc.errors()]  # extract error messages
     payload = ErrorResponse(errors=messages).model_dump()
     return JSONResponse(status_code=422, content=payload)
 

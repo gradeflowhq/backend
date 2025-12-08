@@ -9,7 +9,7 @@ from gradeflow_backend.schemas.assessments import (
 )
 from gradeflow_backend.schemas.auth import MeResponse, TokenPairResponse
 from gradeflow_backend.schemas.grading import (
-    GradingExportResponse,
+    GradingDownloadResponse,
     GradingJob,
     GradingResponse,
     JobStatusResponse,
@@ -59,7 +59,7 @@ class ApiClient:
     def try_me(self) -> Response:
         return self.client.get("/auth/me", headers=self._auth_header)
 
-    # Auth (success-path delegates to try_)
+    # Auth (success-path delegates to try-)
 
     def signup(self, email: str, password: str, name: str | None = None) -> TokenPairResponse:
         r = self.try_signup(email=email, password=password, name=name)
@@ -108,7 +108,7 @@ class ApiClient:
     def try_delete_assessment(self, id: str) -> Response:
         return self.client.delete(f"/assessments/{id}", headers=self._auth_header)
 
-    # Assessments (success-path delegates to try_)
+    # Assessments (success-path delegates to try-)
 
     def create_assessment(self, name: str, description: str | None = None) -> AssessmentResponse:
         r = self.try_create_assessment(name=name, description=description)
@@ -144,9 +144,19 @@ class ApiClient:
     # -----------------
 
     def try_set_question_set_yaml(self, assessment_id: str, yaml_str: str) -> Response:
+        # Serializer-based upload
         return self.client.put(
-            f"/assessments/{assessment_id}/question-set/load",
-            json={"data": yaml_str, "loader_name": "YAML"},
+            f"/assessments/{assessment_id}/question-set/upload",
+            json={"data": yaml_str, "serializer": {"format": "yaml"}},
+            headers=self._auth_header,
+        )
+
+    def try_import_question_set(
+        self, assessment_id: str, *, data: str, adapter: dict[str, object]
+    ) -> Response:
+        return self.client.put(
+            f"/assessments/{assessment_id}/question-set/import",
+            json={"data": data, "adapter": adapter},
             headers=self._auth_header,
         )
 
@@ -169,10 +179,17 @@ class ApiClient:
             headers=self._auth_header,
         )
 
-    # Question sets (success-path delegates to try_)
+    # Question sets (success-path delegates to try-)
 
     def set_question_set_yaml(self, assessment_id: str, yaml_str: str) -> QuestionSetResponse:
         r = self.try_set_question_set_yaml(assessment_id=assessment_id, yaml_str=yaml_str)
+        assert r.status_code == 200, r.text
+        return QuestionSetResponse.model_validate(r.json())
+
+    def import_question_set(
+        self, assessment_id: str, *, data: str, adapter: dict[str, object]
+    ) -> QuestionSetResponse:
+        r = self.try_import_question_set(assessment_id=assessment_id, data=data, adapter=adapter)
         assert r.status_code == 200, r.text
         return QuestionSetResponse.model_validate(r.json())
 
@@ -195,9 +212,19 @@ class ApiClient:
     # -----------------
 
     def try_set_rubric_yaml(self, assessment_id: str, yaml_str: str) -> Response:
+        # Serializer-based upload
         return self.client.put(
-            f"/assessments/{assessment_id}/rubric/load",
-            json={"data": yaml_str, "loader_name": "YAML"},
+            f"/assessments/{assessment_id}/rubric/upload",
+            json={"data": yaml_str, "serializer": {"format": "yaml"}},
+            headers=self._auth_header,
+        )
+
+    def try_import_rubric(
+        self, assessment_id: str, *, data: str, adapter: dict[str, object]
+    ) -> Response:
+        return self.client.put(
+            f"/assessments/{assessment_id}/rubric/import",
+            json={"data": data, "adapter": adapter},
             headers=self._auth_header,
         )
 
@@ -220,10 +247,17 @@ class ApiClient:
             headers=self._auth_header,
         )
 
-    # Rubrics (success-path delegates to try_)
+    # Rubrics (success-path delegates to try-)
 
     def set_rubric_yaml(self, assessment_id: str, yaml_str: str) -> RubricResponse:
         r = self.try_set_rubric_yaml(assessment_id=assessment_id, yaml_str=yaml_str)
+        assert r.status_code == 200, r.text
+        return RubricResponse.model_validate(r.json())
+
+    def import_rubric(
+        self, assessment_id: str, *, data: str, adapter: dict[str, object]
+    ) -> RubricResponse:
+        r = self.try_import_rubric(assessment_id=assessment_id, data=data, adapter=adapter)
         assert r.status_code == 200, r.text
         return RubricResponse.model_validate(r.json())
 
@@ -277,7 +311,7 @@ class ApiClient:
             headers=self._auth_header,
         )
 
-    # Rubrics Coverage (success-path delegates to try_)
+    # Rubrics Coverage (success-path delegates to try-)
 
     def rubric_coverage(
         self,
@@ -330,9 +364,10 @@ class ApiClient:
     # -----------------
 
     def try_set_submissions_csv(self, assessment_id: str, csv_str: str) -> Response:
+        # Adapter-based import (engine-supported only)
         return self.client.put(
-            f"/assessments/{assessment_id}/submissions/load",
-            json={"data": csv_str, "loader_name": "CSV"},
+            f"/assessments/{assessment_id}/submissions/import",
+            json={"data": csv_str, "adapter": {"name": "csv", "student_id_column": "student_id"}},
             headers=self._auth_header,
         )
 
@@ -348,7 +383,7 @@ class ApiClient:
             headers=self._auth_header,
         )
 
-    # Submissions (success-path delegates to try_)
+    # Submissions (success-path delegates to try-)
 
     def set_submissions_csv(self, assessment_id: str, csv_str: str) -> SubmissionsResponse:
         r = self.try_set_submissions_csv(assessment_id=assessment_id, csv_str=csv_str)
@@ -369,7 +404,7 @@ class ApiClient:
     # -----------------
 
     def try_run_grading(self, assessment_id: str) -> Response:
-        # Updated backend path (no /run)
+        # Start grading
         return self.client.post(
             f"/assessments/{assessment_id}/grading",
             json={},
@@ -405,17 +440,18 @@ class ApiClient:
         assert r.status_code == 200, r.text
         return GradingResponse.model_validate(r.json())
 
-    def try_export_grading(self, assessment_id: str) -> Response:
+    def try_download_grading(self, assessment_id: str) -> Response:
+        # Download graded submissions (serializer-based)
         return self.client.post(
-            f"/assessments/{assessment_id}/grading/export",
-            json={"saver_name": "CSV"},
+            f"/assessments/{assessment_id}/grading/download",
+            json={"serializer": {"format": "csv"}},
             headers=self._auth_header,
         )
 
-    def export_grading(self, assessment_id: str) -> GradingExportResponse:
-        r = self.try_export_grading(assessment_id=assessment_id)
+    def download_grading(self, assessment_id: str) -> GradingDownloadResponse:
+        r = self.try_download_grading(assessment_id=assessment_id)
         assert r.status_code == 200, r.text
-        return GradingExportResponse.model_validate(r.json())
+        return GradingDownloadResponse.model_validate(r.json())
 
     def try_delete_grading(self, assessment_id: str) -> Response:
         return self.client.delete(

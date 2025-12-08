@@ -1,18 +1,23 @@
-from typing import Literal
-
+from gradeflow_engine.adapters.rubric import RubricAdapterConfig
 from gradeflow_engine.question_sets.model import QuestionSet
 from gradeflow_engine.rubrics.model import Rubric, RubricCoverage
 from gradeflow_engine.rules.types import RuleValidationError
-from pydantic import BaseModel
+from gradeflow_engine.serializations.rubric import RubricSerializerConfig
+from pydantic import BaseModel, Field
 
 
 class SetRubricByModelRequest(BaseModel):
     rubric: Rubric
 
 
-class SetRubricByDataRequest(BaseModel):
+class LoadRubricRequest(BaseModel):
     data: str
-    loader_name: Literal["YAML"] = "YAML"
+    serializer: RubricSerializerConfig  # discriminated by "format" (e.g., {"format":"yaml"})
+
+
+class ImportRubricRequest(BaseModel):
+    data: str | bytes = Field(..., description="Source content; str or bytes")
+    adapter: RubricAdapterConfig  # e.g., {"name":"examplify", ...}
 
 
 class RubricResponse(BaseModel):

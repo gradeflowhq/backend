@@ -5,8 +5,6 @@ from typing import Any, TypeAlias, cast
 import pytest
 from fastapi.testclient import TestClient
 from gradeflow_engine.rules.models.length import LengthRule
-
-# Engine models with nullable primitives
 from gradeflow_engine.rules.models.numeric_range import NumericRangeRule
 
 from gradeflow_backend.main import app
@@ -15,7 +13,7 @@ from gradeflow_backend.openapi import convert_primitive_anyof_merge_equal_or_abs
 # Backend schemas with nullable primitives and other shapes
 from gradeflow_backend.schemas.assessments import AssessmentResponse
 from gradeflow_backend.schemas.auth import MeResponse, SignupRequest
-from gradeflow_backend.schemas.grading import GradingExportRequest
+from gradeflow_backend.schemas.grading import GradingDownloadRequest
 from gradeflow_backend.schemas.rubrics import RubricResponse
 from gradeflow_backend.schemas.submissions import SubmissionsResponse
 
@@ -35,9 +33,6 @@ SchemaDict: TypeAlias = dict[str, Any]
 SchemasDict: TypeAlias = dict[str, SchemaDict]
 
 
-# -----------------------
-# Pytest fixture
-# -----------------------
 @pytest.fixture(autouse=True)
 def reset_openapi_cache() -> Generator[None, None, None]:
     app.openapi_schema = None
@@ -45,9 +40,6 @@ def reset_openapi_cache() -> Generator[None, None, None]:
     app.openapi_schema = None
 
 
-# -----------------------
-# Typed helpers
-# -----------------------
 def _client_openapi() -> OpenAPI:
     client = TestClient(app)
     data = client.get("/openapi.json").json()
@@ -123,7 +115,6 @@ def _traverse_and_convert_local(node: JSONValue) -> None:
     if isinstance(node, dict):
         for value in list(node.values()):
             _traverse_and_convert_local(value)
-        # node is dict[str, JSONValue] at this point
         convert_primitive_anyof_merge_equal_or_absent(node)
     elif isinstance(node, list):
         for item in node:
@@ -132,9 +123,6 @@ def _traverse_and_convert_local(node: JSONValue) -> None:
         return
 
 
-# -----------------------
-# Tests
-# -----------------------
 def test_openapi_union_primitive_type_array() -> None:
     openapi: OpenAPI = _client_openapi()
     model_schema: SchemaDict = _get_schema(openapi, SignupRequest)
@@ -154,9 +142,6 @@ def test_openapi_idempotent() -> None:
     assert first == second, "OpenAPI output changed across repeated generation"
 
 
-# -----------------------
-# Unit tests (transformer)
-# -----------------------
 def test_transformer_simple_merge_with_absent_keys() -> None:
     schema: JSONDict = {"anyOf": [{"type": "string", "maxLength": 255}, {"type": "null"}]}
     convert_primitive_anyof_merge_equal_or_absent(schema)
@@ -228,9 +213,6 @@ def test_transformer_noop_when_no_anyof() -> None:
     assert schema == orig
 
 
-# -----------------------
-# Real models (engine/backend)
-# -----------------------
 def test_nullable_string_fields_converted_in_backend_models() -> None:
     openapi: OpenAPI = _client_openapi()
 
@@ -317,7 +299,7 @@ def test_patcher_preserves_discriminated_unions_where_used() -> None:
 
 def test_other_backend_response_shapes() -> None:
     """
-    Exercise RubricResponse, SubmissionsResponse, and GradingExportRequest.
+    Exercise RubricResponse, SubmissionsResponse, and GradingDownloadRequest.
     Validate patcher doesn't alter non-primitive unions.
     """
     openapi: OpenAPI = _client_openapi()
@@ -332,21 +314,11 @@ def test_other_backend_response_shapes() -> None:
     raw_prop: SchemaDict = _get_prop_schema(openapi, sr_schema, "raw_submissions")
     assert raw_prop.get("type") == "array"
 
-    ger_schema: SchemaDict = _get_schema(openapi, GradingExportRequest)
-    kwargs_prop: SchemaDict = _get_prop_schema(openapi, ger_schema, "submissions_saver_kwargs")
-    tkwargs = kwargs_prop.get("type")
-    assert not isinstance(tkwargs, list), (
-        "object-or-null union should not be converted to primitive type array"
+    gdr_schema: SchemaDict = _get_schema(openapi, GradingDownloadRequest)
+    serializer_prop: SchemaDict = _get_prop_schema(openapi, gdr_schema, "serializer")
+    # Serializer is a discriminated union object; ensure not converted to primitive type array
+    assert (
+        serializer_prop.get("type") == "object"
+        or "oneOf" in serializer_prop
+        or "anyOf" in serializer_prop
     )
-    anyof = kwargs_prop.get("anyOf")
-    if isinstance(anyof, list):
-        anyof_list: list[SchemaDict] = cast(list[SchemaDict], anyof)
-        types: set[str] = set()
-        for br in anyof_list:
-            t = br.get("type")
-            if isinstance(t, str):
-                types.add(t)
-        assert "object" in types and "null" in types
-    else:
-        # Some generators may emit nullable object without anyOf but with a direct object type
-        assert kwargs_prop.get("type") == "object"

@@ -3,6 +3,7 @@ from fastapi import Request
 from sqlalchemy.exc import NoResultFound
 from sqlalchemy.orm import Session
 
+from gradeflow_backend.executors.exceptions import JobNotFoundError
 from gradeflow_backend.executors.factory import get_executor
 from gradeflow_backend.repositories.assessments import AssessmentRepository
 from gradeflow_backend.repositories.one_time_tokens import OneTimeTokenRepository
@@ -69,7 +70,10 @@ class JobsService:
             raise
 
     def get_status(self, job_id: str) -> JobStatusResponse:
-        return JobStatusResponse(job_id=job_id, status=self.executor.get_status(job_id))
+        try:
+            return JobStatusResponse(job_id=job_id, status=self.executor.get_status(job_id))
+        except JobNotFoundError as e:
+            raise NotFoundError("Job not found") from e
 
     def on_callback(self, token: str, result: GradingJobResult) -> None:
         """

@@ -3,10 +3,12 @@ import logging
 import uuid
 from typing import Any, cast
 
-from nomad import Nomad  # type: ignore[import-untyped]
+import nomad.api.exceptions  # type: ignore[import-untyped]
+from nomad import Nomad
 
 from gradeflow_backend.config import get_settings
 from gradeflow_backend.executors.base import GradingJobExecutor
+from gradeflow_backend.executors.exceptions import JobNotFoundError
 from gradeflow_backend.executors.registry import register
 from gradeflow_backend.schemas.grading import GradingJobSpec, JobStatus
 from gradeflow_backend.utils.renderers import (
@@ -177,7 +179,11 @@ class NomadJobExecutor(GradingJobExecutor):
         return job_id
 
     def get_status(self, job_id: str) -> JobStatus:
-        job = cast(dict[str, Any], self._nomad.job.get_job(job_id, namespace=self._namespace))
+        try:
+            job = cast(dict[str, Any], self._nomad.job.get_job(job_id, namespace=self._namespace))
+        except nomad.api.exceptions.URLNotFoundNomadException as e:
+            logger.error("Nomad job not found", extra={"job_id": job_id})
+            raise JobNotFoundError(f"Job not found: {job_id}") from e
         status = cast(str, job["Status"])
         assert status in {"pending", "running", "dead"}, f"Unknown Nomad job status: {status}"
         if status == "pending":

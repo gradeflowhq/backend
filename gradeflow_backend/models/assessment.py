@@ -25,9 +25,6 @@ class Assessment(Base):
     graded_submissions_yaml: Mapped[str | None] = mapped_column(Text, nullable=True)
     graded_submissions_preview_yaml: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    run_job_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    preview_job_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
-
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

@@ -79,19 +79,3 @@ class AssessmentRepository(BaseRepository):
 
     def get_graded_preview_yaml(self, id: str) -> str | None:
         return self.get(id).graded_submissions_preview_yaml
-
-    def get_run_job_id(self, id: str) -> str | None:
-        return self.get(id).run_job_id
-
-    def set_run_job_id(self, id: str, job_id: str | None) -> None:
-        a = self.get(id)
-        a.run_job_id = job_id
-        self.session().flush()
-
-    def get_preview_job_id(self, id: str) -> str | None:
-        return self.get(id).preview_job_id
-
-    def set_preview_job_id(self, id: str, job_id: str | None) -> None:
-        a = self.get(id)
-        a.preview_job_id = job_id
-        self.session().flush()

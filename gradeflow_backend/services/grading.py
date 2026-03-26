@@ -16,6 +16,7 @@ from sqlalchemy.exc import NoResultFound
 
 from gradeflow_backend.models.assessment import Assessment
 from gradeflow_backend.repositories.assessments import AssessmentRepository
+from gradeflow_backend.repositories.grading_jobs import GradingJobRepository
 from gradeflow_backend.schemas.grading import (
     AdjustableGradedSubmission,
     AdjustableQuestionResult,
@@ -41,8 +42,9 @@ from gradeflow_backend.utils.jobs import build_grading_job
 
 
 class GradingService:
-    def __init__(self, repo: AssessmentRepository) -> None:
+    def __init__(self, repo: AssessmentRepository, grading_jobs: GradingJobRepository) -> None:
         self.repo = repo
+        self.grading_jobs = grading_jobs
 
     # ---------------------------
     # Shared helpers
@@ -186,11 +188,8 @@ class GradingService:
         adjustable = [AdjustableGradedSubmission.model_validate(obj) for obj in items]
         return GradingResponse(graded_submissions=adjustable)
 
-    def get_job(self, assessment_id: str, request: Request) -> GradingJob:
-        try:
-            job_id = self.repo.get_run_job_id(assessment_id)
-        except NoResultFound as e:
-            raise NotFoundError("Assessment not found") from e
+    def get_job(self, assessment_id: str, type: JobType, request: Request) -> GradingJob:
+        job_id = self.grading_jobs.get_job_id(assessment_id, type)
         if not job_id:
             raise NotFoundError("No job found for this assessment")
         return build_grading_job(request, job_id)
@@ -309,11 +308,3 @@ class GradingService:
         self.repo.set_graded_preview_yaml(assessment_id, None)
         return GradingResponse(graded_submissions=adjustable)
 
-    def get_preview_job(self, assessment_id: str, request: Request) -> GradingJob:
-        try:
-            job_id = self.repo.get_preview_job_id(assessment_id)
-        except NoResultFound as e:
-            raise NotFoundError("Assessment not found") from e
-        if not job_id:
-            raise NotFoundError("No preview job found for this assessment")
-        return build_grading_job(request, job_id)

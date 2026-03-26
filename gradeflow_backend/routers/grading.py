@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from gradeflow_backend.db import get_session
 from gradeflow_backend.dependencies.memberships import member_guard_factory, role_guard_factory
 from gradeflow_backend.repositories.assessments import AssessmentRepository
+from gradeflow_backend.repositories.grading_jobs import GradingJobRepository
 from gradeflow_backend.schemas.grading import (
     GradeAdjustmentRequest,
     GradingDownloadRequest,
@@ -20,7 +21,7 @@ router = APIRouter(prefix="/assessments/{assessment_id}/grading", tags=["grading
 
 
 def get_service(db: Session = Depends(get_session)) -> GradingService:
-    return GradingService(AssessmentRepository(db))
+    return GradingService(AssessmentRepository(db), GradingJobRepository(db))
 
 
 def get_jobs_service(db: Session = Depends(get_session)) -> JobsService:
@@ -43,7 +44,7 @@ def get_grading_job(
     svc: GradingService = Depends(get_service),
     _u: str = Depends(member_guard_factory()),
 ) -> GradingJob:
-    return svc.get_job(assessment_id, request)
+    return svc.get_job(assessment_id, "run", request)
 
 
 @router.post("", response_model=GradingJob, status_code=status.HTTP_200_OK)
@@ -115,4 +116,4 @@ def get_grading_preview_job(
     svc: GradingService = Depends(get_service),
     _u: str = Depends(member_guard_factory()),
 ) -> GradingJob:
-    return svc.get_preview_job(assessment_id, request)
+    return svc.get_job(assessment_id, "preview", request)

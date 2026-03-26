@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from gradeflow_backend.executors.exceptions import JobNotFoundError
 from gradeflow_backend.executors.factory import get_executor
 from gradeflow_backend.repositories.assessments import AssessmentRepository
+from gradeflow_backend.repositories.grading_jobs import GradingJobRepository
 from gradeflow_backend.repositories.one_time_tokens import OneTimeTokenRepository
 from gradeflow_backend.schemas.grading import (
     GradingJob,
@@ -21,6 +22,7 @@ class JobsService:
     def __init__(self, db: Session) -> None:
         self.db = db
         self.assessments = AssessmentRepository(db)
+        self.grading_jobs = GradingJobRepository(db)
         self.tokens = OneTimeTokenRepository(db)
         self.executor = get_executor()
 
@@ -29,14 +31,6 @@ class JobsService:
             self.assessments.set_graded_preview_yaml(assessment_id, yaml_str)
         elif type == "run":
             self.assessments.set_graded_yaml(assessment_id, yaml_str)
-        else:
-            raise BadRequestError("Unknown job type")
-
-    def _set_job_id(self, assessment_id: str, type: str, job_id: str | None) -> None:
-        if type == "preview":
-            self.assessments.set_preview_job_id(assessment_id, job_id)
-        elif type == "run":
-            self.assessments.set_run_job_id(assessment_id, job_id)
         else:
             raise BadRequestError("Unknown job type")
 
@@ -58,8 +52,8 @@ class JobsService:
             # Enqueue job
             job_id = self.executor.submit(spec, callback_url=callback_url)
 
-            # Persist job_id on assessment
-            self._set_job_id(spec.assessment_id, spec.type, job_id)
+            # Persist job_id
+            self.grading_jobs.create(spec.assessment_id, spec.type, job_id)
 
             # Commit job_id
             self.db.commit()

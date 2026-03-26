@@ -19,7 +19,12 @@ class SecuritySettings(BaseModel):
 
 
 class DatabaseSettings(BaseModel):
-    # Example: sqlite+pysqlite:///./gradeflow_backend.db
+    # Set DB_URL to the SQLAlchemy connection string for your database.
+    # SQLite  (default, file-based):  sqlite+pysqlite:///./gradeflow_backend.db
+    # SQLite  (in-memory):            sqlite+pysqlite://
+    # PostgreSQL (requires [postgresql] extra):  postgresql+psycopg2://user:pass@host:5432/dbname
+    # MySQL     (requires [mysql] extra):        mysql+pymysql://user:pass@host:3306/dbname
+    # MariaDB   (requires [mysql] extra):        mariadb+pymysql://user:pass@host:3306/dbname
     url: str = Field(default="sqlite+pysqlite:///./gradeflow_backend.db", alias="DB_URL")
 
 

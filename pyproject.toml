@@ -18,6 +18,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Database drivers — install the one matching your DB_URL scheme:
+#   pip install gradeflow-backend[postgresql]
+#   pip install gradeflow-backend[mysql]      (also covers MariaDB)
+postgresql = ["psycopg2-binary>=2.9"]
+mysql = ["pymysql>=1.1"]  # compatible with both MySQL 8+ and MariaDB 10.5+
 dev = [
   "pytest>=9.0",
   "pytest-cov>=7.0",

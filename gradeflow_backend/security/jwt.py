@@ -1,6 +1,6 @@
 import uuid
 from datetime import UTC, datetime, timedelta
-from typing import Any, cast
+from typing import Any
 
 import jwt
 
@@ -65,7 +65,7 @@ def decode_token(token: str) -> dict[str, Any]:
             audience=cfg.jwt_audience,
             issuer=cfg.jwt_issuer,
         )
-        return cast(dict[str, Any], payload)
+        return payload  # PyJWT returns Any
     except jwt.PyJWTError as e:
         raise JwtError(str(e)) from e
 

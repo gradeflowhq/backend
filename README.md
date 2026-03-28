@@ -24,57 +24,51 @@ pip install -e ".[mysql]"
 
 ### Configuration
 
-All settings are loaded from environment variables (or an optional `.env` file). Sane defaults are provided for local development.
+Settings are loaded from environment variables (or an optional `.env` file) using [pydantic-settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/) with `env_nested_delimiter='__'`. Nested fields are addressed with `__`, e.g. `SECURITY__JWT_SECRET` sets `settings.security.jwt_secret`.
 
-**Security**
-- `JWT_SECRET` — symmetric secret for HS256 (default: `change-me-in-prod`)
-- `JWT_ALGORITHM` — default: `HS256`
-- `JWT_ISSUER` — default: `gradeflow-api`
-- `JWT_AUDIENCE` — default: `gradeflow-clients`
-- `JWT_ACCESS_EXPIRES_MINUTES` — default: `30`
-- `JWT_REFRESH_EXPIRES_DAYS` — default: `14`
-- `JWT_KID` — optional key id
-- `PASSWORD_MIN_LENGTH` — default: `12`
+**Security** (`SECURITY__*`)
+- `SECURITY__JWT_SECRET` — symmetric secret for HS256 (default: `change-me-in-prod`)
+- `SECURITY__JWT_ALGORITHM` — default: `HS256`
+- `SECURITY__JWT_ISSUER` — default: `gradeflow-api`
+- `SECURITY__JWT_AUDIENCE` — default: `gradeflow-clients`
+- `SECURITY__JWT_ACCESS_EXPIRES_MINUTES` — default: `30`
+- `SECURITY__JWT_REFRESH_EXPIRES_DAYS` — default: `14`
+- `SECURITY__JWT_KID` — optional key id
+- `SECURITY__PASSWORD_MIN_LENGTH` — default: `12`
 
-**Database**
+**Database** (`DATABASE__*`)
 
-Set `DB_URL` to the SQLAlchemy connection string for your database:
+Set `DATABASE__URL` to the SQLAlchemy connection string for your database:
 - SQLite file (default): `sqlite+pysqlite:///./gradeflow_backend.db`
 - SQLite in-memory: `sqlite+pysqlite://`
 - PostgreSQL (requires `[postgresql]` extra): `postgresql+psycopg2://user:pass@host:5432/dbname`
 - MySQL (requires `[mysql]` extra): `mysql+pymysql://user:pass@host:3306/dbname`
 - MariaDB (requires `[mysql]` extra): `mariadb+pymysql://user:pass@host:3306/dbname`
 
-**Valkey (preview cache)**
-- `VALKEY_URL` — default: `valkey://gradeflow-valkey:6379/0`
-- `PREVIEW_TTL_S` — TTL in seconds for cached preview results (default: `300`)
+**Valkey (preview cache)** (`VALKEY__*`)
+- `VALKEY__URL` — default: `valkey://gradeflow-valkey:6379/0`
+- `VALKEY__PREVIEW_TTL_S` — TTL in seconds for cached preview results (default: `300`)
 
-**Executor**
-- `EXECUTOR` — `NOMAD` (default) | `INMEMORY_CONTAINER` | `INMEMORY_SUBPROCESS` | `SYNCHRONOUS`
-- `ENGINE_COMMAND` — gradeflow-engine command (default: `gradeflow-engine`)
-- `TIMEOUT_S` — job timeout in seconds (default: `300`)
-- `NUM_WORKERS` — worker count for in-memory executors (default: `4`)
-- `CONTAINER_RUNTIME` — `docker` (default) for container executor
-- `CONTAINER_IMAGE` — engine image (default: `ghcr.io/gradeflowhq/gradeflow-engine:latest`)
-- `CALLBACK_BASE_URL` — absolute base URL for job callbacks (default: `http://host.docker.internal:8000`)
-- `NOMAD_HOST` — Nomad HTTP host (default: `host.docker.internal`)
-- `NOMAD_PORT` — Nomad HTTP port (default: `4646`)
-- `NOMAD_TOKEN` — Nomad ACL token (optional)
-- `NOMAD_NAMESPACE` — Nomad namespace (optional)
-- `NOMAD_DATACENTERS` — comma-separated list (default: `dc1`)
-- `NOMAD_CPU` — Nomad task CPU MHz (default: `200`)
-- `NOMAD_MEMORY_MB` — Nomad task memory MB (default: `512`)
+**Executor** (`EXECUTOR__*`)
+- `EXECUTOR__EXECUTOR` — `NOMAD` (default) | `INMEMORY_CONTAINER` | `INMEMORY_SUBPROCESS` | `SYNCHRONOUS`
+- `EXECUTOR__ENGINE_COMMAND` — gradeflow-engine command (default: `gradeflow-engine`)
+- `EXECUTOR__TIMEOUT_S` — job timeout in seconds (default: `300`)
+- `EXECUTOR__NUM_WORKERS` — worker count for in-memory executors (default: `4`)
+- `EXECUTOR__CONTAINER_RUNTIME` — `docker` (default) for container executor
+- `EXECUTOR__CONTAINER_IMAGE` — engine image (default: `ghcr.io/gradeflowhq/gradeflow-engine:latest`)
+- `EXECUTOR__CALLBACK_BASE_URL` — absolute base URL for job callbacks (default: `http://host.docker.internal:8000`)
+- `EXECUTOR__NOMAD_HOST` — Nomad HTTP host (default: `host.docker.internal`)
+- `EXECUTOR__NOMAD_PORT` — Nomad HTTP port (default: `4646`)
+- `EXECUTOR__NOMAD_TOKEN` — Nomad ACL token (optional)
+- `EXECUTOR__NOMAD_NAMESPACE` — Nomad namespace (optional)
+- `EXECUTOR__NOMAD_DATACENTERS` — comma-separated list (default: `dc1`)
+- `EXECUTOR__NOMAD_CPU` — Nomad task CPU MHz (default: `200`)
+- `EXECUTOR__NOMAD_MEMORY_MB` — Nomad task memory MB (default: `512`)
 
-**Grading**
-- `MAX_SUBMISSION_PREVIEW` — maximum submissions allowed in a preview run (default: `20`)
+**Grading** (`GRADING__*`)
+- `GRADING__MAX_SUBMISSION_PREVIEW` — maximum submissions allowed in a preview run (default: `20`)
 
-Example local `.env` (optional):
-```
-JWT_SECRET=test-secret
-DB_URL=sqlite+pysqlite:///./gradeflow_backend.db
-VALKEY_URL=valkey://localhost:6379/0
-EXECUTOR=SYNCHRONOUS
-```
+Example `.env` can be found in `.env.example`.
 
 ### Run the App
 
@@ -83,6 +77,28 @@ uvicorn gradeflow_backend.main:app --reload
 ```
 - Docs: http://127.0.0.1:8000/docs
 - Health: GET /health -> `{"status": "ok"}`
+
+### Using Containers
+
+Setup network
+```
+docker network create gradeflow
+```
+
+Run Valkey
+```
+docker run --name gradeflow-valkey --network gradeflow -d valkey/valkey
+```
+
+Run MariaDB
+```
+docker run --name gradeflow-mariadb --network gradeflow --env MARIADB_USER=mariadb --env MARIADB_PASSWORD=my-secret-pw --env MARIADB_DATABASE=gradeflow --env MARIADB_ROOT_PASSWORD=my-secret-pw -d mariadb:latest
+```
+
+Run backend
+```
+docker run --name gradeflow-backend --network gradeflow --env-file .env -p 8000:8000 -d ghcr.io/gradeflowhq/gradeflow-backend:latest
+```
 
 ## Authentication
 

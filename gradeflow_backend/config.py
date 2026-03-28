@@ -25,7 +25,7 @@ class DatabaseSettings(BaseModel):
     # PostgreSQL (requires [postgresql] extra):  postgresql+psycopg2://user:pass@host:5432/dbname
     # MySQL     (requires [mysql] extra):        mysql+pymysql://user:pass@host:3306/dbname
     # MariaDB   (requires [mysql] extra):        mariadb+pymysql://user:pass@host:3306/dbname
-    url: str = Field(default="sqlite+pysqlite:///./gradeflow_backend.db", alias="DB_URL")
+    url: str = Field(default="sqlite+pysqlite:///./gradeflow_backend.db")
 
 
 class CorsSettings(BaseModel):
@@ -77,7 +77,7 @@ class ExecutorSettings(BaseModel):
 
 
 class ValkeySettings(BaseModel):
-    url: str = Field(default="valkey://gradeflow-valkey:6379/0", alias="VALKEY_URL")
+    url: str = Field(default="valkey://gradeflow-valkey:6379/0")
     preview_ttl_s: int = Field(
         default=300,
         description="TTL (seconds) for preview results stored in Valkey. Defaults to 5 minutes.",
@@ -93,11 +93,11 @@ class GradingSettings(BaseModel):
 
 class AppSettings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_prefix="",  # allow plain env names (e.g., JWT_SECRET)
-        env_file=".env",  # optional; used if present
+        env_prefix="",
+        env_nested_delimiter='__',
+        env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
-        populate_by_name=True,  # allow aliases like DB_URL
     )
 
     security: SecuritySettings = SecuritySettings()

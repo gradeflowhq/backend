@@ -117,7 +117,12 @@ class GradingService:
         qset = self._load_question_set(a.question_set_yaml)
         raw_subs = derive_raw_submissions(a)
 
-        rubric = Rubric(rules=[rule]) if rule is not None else self._load_rubric(a.rubric_yaml)
+        if rule is not None:
+            rubric = Rubric(rules=[rule])
+            # Clear out any existing results to not pollute the preview with irrelevant results
+            raw_subs = [s.model_copy(update={"result_map": {}}) for s in raw_subs]
+        else:
+            rubric = self._load_rubric(a.rubric_yaml)
 
         self._validate_or_raise(rubric, qset)
 

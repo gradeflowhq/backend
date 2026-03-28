@@ -117,6 +117,34 @@ def test_preview_single_rule_filters_results_and_submissions(api: ApiClient) -> 
     assert r_s2_q1.passed is False
 
 
+def test_preview_clears_existing_results(api: ApiClient) -> None:
+    # Setup: assessment with full config including rubric
+    created = api.create_assessment("Preview Clears Existing Results")
+    api.set_question_set_yaml(created.id, QUESTION_SET_YAML)
+    api.set_rubric_yaml(created.id, RUBRIC_YAML)
+    api.set_submissions_csv(created.id, SUBMISSIONS_CSV)
+
+    # Run a full grading first so submissions have results across all questions
+    full = api.run_grading(created.id)
+    assert full.submissions, "Expected graded submissions before preview"
+    s1_full = next(gs for gs in full.submissions if gs.student_id == "s1")
+    assert len(s1_full.result_map) > 1, "Expected results for multiple questions after full run"
+
+    # Preview with a single rule targeting only q1
+    preview = api.preview_grading(
+        assessment_id=created.id,
+        rule=_rule_exact_match_q1(),
+    )
+
+    # The result_map of every preview submission must only contain q1 —
+    # pre-existing results from the full run must not leak through
+    assert preview.submissions, "Expected preview submissions"
+    for gs in preview.submissions:
+        assert set(gs.result_map.keys()) == {"q1"}, (
+            f"Preview for {gs.student_id} leaked non-target results: {set(gs.result_map.keys())}"
+        )
+
+
 def test_preview_limit_first(api: ApiClient) -> None:
     # Setup: assessment with question set, rubric (optional), submissions
     created = api.create_assessment("Preview Limit First")

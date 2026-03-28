@@ -25,6 +25,7 @@ class InMemorySubprocessJobExecutor(InMemoryBaseJobExecutor):
         callback_url: str,
         assessment_id: str,
         job_type: str,
+        point_columns_json: str = "{}",
     ) -> None:
         """
         Invoke the shared entrypoint in a local Python subprocess, passing GF_* env vars.
@@ -48,6 +49,7 @@ class InMemorySubprocessJobExecutor(InMemoryBaseJobExecutor):
             "GF_QSET_PATH": str(qset_yaml),
             "GF_RUBRIC_PATH": str(rubric_yaml),
             "GF_OUT_PATH": str(out_path),
+            "GF_POINT_COLUMNS_JSON": point_columns_json,
         }
 
         logger.info(

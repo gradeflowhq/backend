@@ -28,9 +28,9 @@ class JobsService:
 
     def _set_data(self, assessment_id: str, type: str, yaml_str: str | None) -> None:
         if type == "preview":
-            self.assessments.set_graded_preview_yaml(assessment_id, yaml_str)
+            self.assessments.set_preview_yaml(assessment_id, yaml_str)
         elif type == "run":
-            self.assessments.set_graded_yaml(assessment_id, yaml_str)
+            self.assessments.set_submissions_yaml(assessment_id, yaml_str)
         else:
             raise BadRequestError("Unknown job type")
 
@@ -92,6 +92,6 @@ class JobsService:
             raise NotFoundError("Assessment not found") from e
 
         # Persist results
-        payload = [gs.model_dump() for gs in result.graded_submissions]
+        payload = [gs.model_dump() for gs in result.submissions]
         yaml_str = yaml.safe_dump(payload)
         self._set_data(result.assessment_id, result.type, yaml_str)

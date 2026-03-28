@@ -1,15 +1,26 @@
-from gradeflow_engine.adapters.raw_submissions import SubmissionsConfigAdapter
 from gradeflow_engine.submissions.models import RawSubmission
 from pydantic import BaseModel, Field
 
 
-class SetSubmissionsByModelRequest(BaseModel):
-    raw_submissions: list[RawSubmission]
+class UploadSourceDataRequest(BaseModel):
+    data: str = Field(
+        ..., description="Processed CSV text (rows trimmed, student IDs optionally encrypted)"
+    )
+    student_id_column: str = Field(
+        ..., description="Name of the student ID column in the uploaded CSV"
+    )
 
 
-class ImportSubmissionsRequest(BaseModel):
-    data: str | bytes = Field(..., description="Source content; str or bytes")
-    adapter: SubmissionsConfigAdapter  # e.g., {"name":"csv", "student_id_column":"student_id", ...}
+class SourceDataResponse(BaseModel):
+    headers: list[str]
+    rows: list[list[str]]
+    total_rows: int
+    student_id_column: str | None = None
+
+
+class SubmissionsImportConfig(BaseModel):
+    answer_columns: list[str] | None = None
+    point_columns: dict[str, str] | None = None  # question_id (= column name) -> points CSV column
 
 
 class SubmissionsResponse(BaseModel):

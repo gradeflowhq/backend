@@ -1,4 +1,5 @@
 import importlib.resources as ir
+import json
 import logging
 import uuid
 from typing import Any, cast
@@ -12,6 +13,7 @@ from gradeflow_backend.executors.exceptions import JobNotFoundError
 from gradeflow_backend.executors.registry import register
 from gradeflow_backend.schemas.grading import GradingJobSpec, JobStatus
 from gradeflow_backend.utils.renderers import (
+    render_point_columns_map,
     render_question_set_yaml,
     render_rubric_yaml_minimal,
     render_submissions_csv,
@@ -63,6 +65,7 @@ def _build_nomad_job(
     rubric_yaml: str,
     entrypoint_py: str,
     callback_url: str,
+    point_columns_json: str = "{}",
 ) -> dict[str, Any]:
     s = get_settings().executor
     image = s.container_image or DEFAULT_IMAGE
@@ -82,6 +85,7 @@ def _build_nomad_job(
         "GF_OUT_PATH": f"{workdir}/graded.yaml",
         "GF_TIMEOUT_S": str(s.timeout_s),
         "GF_CALLBACK_TIMEOUT_S": str(s.callback_timeout_s),
+        "GF_POINT_COLUMNS_JSON": point_columns_json,
     }
 
     templates: list[dict[str, str]] = [
@@ -166,6 +170,7 @@ class NomadJobExecutor(GradingJobExecutor):
             rubric_yaml=render_rubric_yaml_minimal(spec),
             entrypoint_py=_load_entrypoint_source(),
             callback_url=callback_url,
+            point_columns_json=json.dumps(render_point_columns_map(spec)),
         )
 
         logger.info("Registering Nomad job", extra={"job_id": job_id, "namespace": self._namespace})

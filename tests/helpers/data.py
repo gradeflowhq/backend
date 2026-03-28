@@ -6,12 +6,15 @@ question_map:
   q1:
     type: TEXT
     description: "Your name?"
+    max_points: 1.0
   q2:
     type: NUMERIC
     description: "Score?"
+    max_points: 2.0
   q3:
     type: CHOICE
     description: "Select letter"
+    max_points: 1.5
     options:
       - A
       - B
@@ -24,6 +27,7 @@ question_map:
   q4:
     type: MULTI_VALUED
     description: "Two-part answer"
+    max_points: 2.0
     value_types:
       - TEXT
       - TEXT

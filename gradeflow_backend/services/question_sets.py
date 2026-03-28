@@ -1,4 +1,3 @@
-import yaml
 from gradeflow_engine.core import (
     dump_question_set_to_blob,
     load_question_set_from_blob,
@@ -19,6 +18,7 @@ from gradeflow_backend.schemas.question_sets import (
     SetQuestionSetByModelRequest,
 )
 from gradeflow_backend.services.exceptions import BadRequestError, NotFoundError
+from gradeflow_backend.services.submissions import derive_raw_submissions
 from gradeflow_backend.utils.io import blob_from_str, source_from_data
 
 
@@ -96,11 +96,7 @@ class QuestionSetService:
 
         raw_subs: list[RawSubmission]
         if req.use_stored_submissions:
-            subs_yaml = a.submissions_yaml
-            if not subs_yaml:
-                raise NotFoundError("No submissions stored for this assessment")
-            items = yaml.safe_load(subs_yaml) or []
-            raw_subs = [RawSubmission.model_validate(obj) for obj in items]
+            raw_subs = derive_raw_submissions(a)
         else:
             if not req.raw_submissions:
                 raise BadRequestError(
@@ -139,11 +135,7 @@ class QuestionSetService:
             qset = req.question_set
 
         if req.use_stored_submissions:
-            subs_yaml = a.submissions_yaml
-            if not subs_yaml:
-                raise NotFoundError("Submissions not set")
-            items = yaml.safe_load(subs_yaml) or []
-            raw_subs = [RawSubmission.model_validate(obj) for obj in items]
+            raw_subs = derive_raw_submissions(a)
         else:
             if req.raw_submissions is None:
                 raise BadRequestError(

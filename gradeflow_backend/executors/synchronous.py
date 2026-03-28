@@ -30,13 +30,15 @@ class SynchronousJobExecutor(GradingJobExecutor):
                 raise RubricValidationError(errors)
 
             # Grade
-            graded_submissions = spec.rubric.grade(submissions, strict=False)
+            submissions = spec.rubric.grade(
+                submissions, spec.question_set.question_map, strict=False
+            )
 
             # Build result
             result = GradingJobResult(
                 assessment_id=spec.assessment_id,
                 type=spec.type,
-                graded_submissions=graded_submissions,
+                submissions=submissions,
             )
 
             # Post callback

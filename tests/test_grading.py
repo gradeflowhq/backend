@@ -22,10 +22,10 @@ def test_grading_flow(api: ApiClient) -> None:
     # Start grading and immediately fetch results (helper uses async run + GET)
     run = api.run_grading(created.id)
 
-    if run.graded_submissions:
+    if run.submissions:
         # Get graded results
         graded = api.get_grading(created.id)
-        assert len(graded.graded_submissions) >= 1
+        assert len(graded.submissions) >= 1
 
         # Download graded results (pre-adjustment)
         dl = api.download_grading(created.id)
@@ -48,19 +48,19 @@ def test_grading_flow(api: ApiClient) -> None:
             },
         ]
         adjusted = api.adjust_grading(created.id, adjustments=adjustments)
-        assert len(adjusted.graded_submissions) >= 1
+        assert len(adjusted.submissions) >= 1
 
         # Verify adjusted fields present in GET
         got_after = api.get_grading(created.id)
         # Check s2 q1 adjusted to 1.0
-        s2 = next(gs for gs in got_after.graded_submissions if gs.student_id == "s2")
-        r_s2_q1 = next(r for r in s2.results if r.question_id == "q1")
+        s2 = next(gs for gs in got_after.submissions if gs.student_id == "s2")
+        r_s2_q1 = s2.result_map["q1"]
         assert r_s2_q1.adjusted_points == 1.0
         assert r_s2_q1.adjusted_feedback == "Manual override: name accepted."
 
         # Check s1 q2 adjusted to 1.5
-        s1 = next(gs for gs in got_after.graded_submissions if gs.student_id == "s1")
-        r_s1_q2 = next(r for r in s1.results if r.question_id == "q2")
+        s1 = next(gs for gs in got_after.submissions if gs.student_id == "s1")
+        r_s1_q2 = s1.result_map["q2"]
         assert r_s1_q2.adjusted_points == 1.5
         assert r_s1_q2.adjusted_feedback == "Partial credit for score."
 
@@ -100,17 +100,17 @@ def test_preview_single_rule_filters_results_and_submissions(api: ApiClient) -> 
     )
 
     # We expect both s1 and s2 to be present (both answered q1), but only q1 results included
-    assert len(resp.graded_submissions) >= 1
-    for gs in resp.graded_submissions:
-        assert all(r.question_id == "q1" for r in gs.results), "Non-target results leaked"
+    assert len(resp.submissions) >= 1
+    for gs in resp.submissions:
+        assert all(qid == "q1" for qid in gs.result_map), "Non-target results leaked"
 
     # Verify pass/fail outcomes for the rule
-    s1 = next(gs for gs in resp.graded_submissions if gs.student_id == "s1")
-    r_s1_q1 = next(r for r in s1.results if r.question_id == "q1")
+    s1 = next(gs for gs in resp.submissions if gs.student_id == "s1")
+    r_s1_q1 = s1.result_map["q1"]
     assert r_s1_q1.passed is True
 
-    s2 = next(gs for gs in resp.graded_submissions if gs.student_id == "s2")
-    r_s2_q1 = next(r for r in s2.results if r.question_id == "q1")
+    s2 = next(gs for gs in resp.submissions if gs.student_id == "s2")
+    r_s2_q1 = s2.result_map["q1"]
     assert r_s2_q1.passed is False
 
 
@@ -127,8 +127,8 @@ def test_preview_limit_first(api: ApiClient) -> None:
         limit=1,
         selection="first",
     )
-    assert len(resp.graded_submissions) == 1
-    assert resp.graded_submissions[0].student_id == "s1"
+    assert len(resp.submissions) == 1
+    assert resp.submissions[0].student_id == "s1"
 
 
 def test_preview_random_sampling_seed_reproducible(api: ApiClient) -> None:
@@ -151,9 +151,9 @@ def test_preview_random_sampling_seed_reproducible(api: ApiClient) -> None:
         selection="random",
         seed=42,
     )
-    assert len(resp1.graded_submissions) == 1
-    assert len(resp2.graded_submissions) == 1
-    assert resp1.graded_submissions[0].student_id == resp2.graded_submissions[0].student_id
+    assert len(resp1.submissions) == 1
+    assert len(resp2.submissions) == 1
+    assert resp1.submissions[0].student_id == resp2.submissions[0].student_id
 
     # Different seed -> different sampled student
     resp3 = api.preview_grading(
@@ -162,5 +162,5 @@ def test_preview_random_sampling_seed_reproducible(api: ApiClient) -> None:
         selection="random",
         seed=99,
     )
-    assert len(resp3.graded_submissions) == 1
-    assert resp3.graded_submissions[0].student_id != resp1.graded_submissions[0].student_id
+    assert len(resp3.submissions) == 1
+    assert resp3.submissions[0].student_id != resp1.submissions[0].student_id

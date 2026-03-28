@@ -56,6 +56,26 @@ class AssessmentRepository(BaseRepository):
     def get_rubric_yaml(self, id: str) -> str | None:
         return self.get(id).rubric_yaml
 
+    def set_source(self, id: str, data: str | None, student_id_column: str | None) -> None:
+        a = self.get(id)
+        a.source_data = data
+        a.source_student_id_column = student_id_column
+        self.session().flush()
+
+    def get_source_data(self, id: str) -> str | None:
+        return self.get(id).source_data
+
+    def get_source_student_id_column(self, id: str) -> str | None:
+        return self.get(id).source_student_id_column
+
+    def set_submissions_config_yaml(self, id: str, data: str | None) -> None:
+        a = self.get(id)
+        a.submissions_config_yaml = data
+        self.session().flush()
+
+    def get_submissions_config_yaml(self, id: str) -> str | None:
+        return self.get(id).submissions_config_yaml
+
     def set_submissions_yaml(self, id: str, yaml_str: str | None) -> None:
         a = self.get(id)
         a.submissions_yaml = yaml_str
@@ -64,18 +84,10 @@ class AssessmentRepository(BaseRepository):
     def get_submissions_yaml(self, id: str) -> str | None:
         return self.get(id).submissions_yaml
 
-    def set_graded_yaml(self, id: str, yaml_str: str | None) -> None:
+    def set_preview_yaml(self, id: str, yaml_str: str | None) -> None:
         a = self.get(id)
-        a.graded_submissions_yaml = yaml_str
+        a.preview_yaml = yaml_str
         self.session().flush()
 
-    def get_graded_yaml(self, id: str) -> str | None:
-        return self.get(id).graded_submissions_yaml
-
-    def set_graded_preview_yaml(self, id: str, yaml_str: str | None) -> None:
-        a = self.get(id)
-        a.graded_submissions_preview_yaml = yaml_str
-        self.session().flush()
-
-    def get_graded_preview_yaml(self, id: str) -> str | None:
-        return self.get(id).graded_submissions_preview_yaml
+    def get_preview_yaml(self, id: str) -> str | None:
+        return self.get(id).preview_yaml

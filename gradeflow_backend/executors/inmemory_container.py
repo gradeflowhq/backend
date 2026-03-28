@@ -73,6 +73,7 @@ class InMemoryContainerJobExecutor(InMemoryBaseJobExecutor):
         callback_url: str,
         assessment_id: str,
         job_type: str,
+        point_columns_json: str = "{}",
     ) -> None:
         """
         Invoke the shared entrypoint inside a container, injecting GF_* env vars.
@@ -111,6 +112,8 @@ class InMemoryContainerJobExecutor(InMemoryBaseJobExecutor):
             f"GF_RUBRIC_PATH={self._container_workdir}/rubric.yaml",
             "-e",
             f"GF_OUT_PATH={self._container_workdir}/graded.yaml",
+            "-e",
+            f"GF_POINT_COLUMNS_JSON={point_columns_json}",
         ]
         # Insert env flags after 'run'
         try:

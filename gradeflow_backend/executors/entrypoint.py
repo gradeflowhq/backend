@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from pathlib import Path
 
 import httpx
 import yaml
-from gradeflow_engine.submissions.models import GradedSubmission
+from gradeflow_engine.submissions.models import Submission
 from pydantic import BaseModel, Field, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -36,6 +37,9 @@ class Config(BaseSettings):
     # Timeouts
     timeout_s: int = Field(default=300, ge=1, description="Engine CLI timeout (seconds)")
     callback_timeout_s: int = Field(default=10, description="Callback POST timeout (seconds)")
+    point_columns_json: str = Field(
+        default="{}", description="JSON-encoded {qid: col} passthrough point column mapping"
+    )
 
     def resolved_submissions(self) -> Path:
         return self.submissions_path or (self.workdir / "submissions.csv")
@@ -53,7 +57,7 @@ class Config(BaseSettings):
 class Payload(BaseModel):
     assessment_id: str
     type: str
-    graded_submissions: list[GradedSubmission]
+    submissions: list[Submission]
 
 
 def _run_engine_cli(
@@ -63,6 +67,7 @@ def _run_engine_cli(
     rubric_yaml: Path,
     out_yaml: Path,
     timeout_s: int,
+    point_columns: dict[str, str] | None = None,
 ) -> None:
     cmd = [
         engine_bin,
@@ -84,6 +89,8 @@ def _run_engine_cli(
         "--out",
         str(out_yaml),
     ]
+    for qid, col in (point_columns or {}).items():
+        cmd += ["--point-column", f"{qid}={col}"]
     completed = subprocess.run(
         cmd,
         capture_output=True,
@@ -122,10 +129,11 @@ def main() -> int:
         rubric_yaml=rubric_yaml,
         out_yaml=out_yaml,
         timeout_s=cfg.timeout_s,
+        point_columns=json.loads(cfg.point_columns_json),
     )
 
     try:
-        items: list[GradedSubmission] = yaml.safe_load(out_yaml.read_text(encoding="utf-8"))
+        items: list[Submission] = yaml.safe_load(out_yaml.read_text(encoding="utf-8"))
     except Exception as e:
         sys.stderr.write(f"[entrypoint] Failed to read graded output: {e}\n")
         return 1
@@ -133,7 +141,7 @@ def main() -> int:
     payload = Payload(
         assessment_id=cfg.assessment_id,
         type=cfg.job_type,
-        graded_submissions=items,
+        submissions=items,
     )
 
     try:

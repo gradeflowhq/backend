@@ -1,4 +1,5 @@
 import importlib.resources as ir
+import json
 import logging
 import tempfile
 import threading
@@ -10,6 +11,7 @@ from pathlib import Path
 from gradeflow_backend.executors.base import GradingJobExecutor
 from gradeflow_backend.schemas.grading import GradingJobSpec, JobStatus
 from gradeflow_backend.utils.renderers import (
+    render_point_columns_map,
     render_question_set_yaml,
     render_rubric_yaml_minimal,
     render_submissions_csv,
@@ -202,6 +204,7 @@ class InMemoryBaseJobExecutor(GradingJobExecutor):
                 callback_url=job.callback_url,
                 assessment_id=spec.assessment_id,
                 job_type=spec.type,
+                point_columns_json=json.dumps(render_point_columns_map(spec)),
             )
 
     # ------- Abstract hook to implement in subclasses -------
@@ -218,6 +221,7 @@ class InMemoryBaseJobExecutor(GradingJobExecutor):
         callback_url: str,
         assessment_id: str,
         job_type: str,  # "run" | "preview"
+        point_columns_json: str = "{}",
     ) -> None:
         """
         Subclasses must implement this to run the shared entrypoint and produce out_path.

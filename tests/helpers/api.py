@@ -363,11 +363,21 @@ class ApiClient:
     # Submissions (try-variants)
     # -----------------
 
+    def try_upload_source_data(
+        self, assessment_id: str, csv_str: str, student_id_column: str = "student_id"
+    ) -> Response:
+        return self.client.put(
+            f"/assessments/{assessment_id}/submissions/source",
+            json={"data": csv_str, "student_id_column": student_id_column},
+            headers=self._auth_header,
+        )
+
     def try_set_submissions_csv(self, assessment_id: str, csv_str: str) -> Response:
-        # Adapter-based import (engine-supported only)
+        r = self.try_upload_source_data(assessment_id, csv_str)
+        if r.status_code != 200:
+            return r
         return self.client.put(
             f"/assessments/{assessment_id}/submissions/import",
-            json={"data": csv_str, "adapter": {"name": "csv", "student_id_column": "student_id"}},
             headers=self._auth_header,
         )
 

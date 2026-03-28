@@ -1,11 +1,12 @@
-from typing import Literal
+from typing import Annotated, Literal
 
 from gradeflow_engine.question_sets.model import QuestionSet
+from gradeflow_engine.questions.types import QuestionId
 from gradeflow_engine.rubrics.model import Rubric
 from gradeflow_engine.rules.models import QuestionRule
 from gradeflow_engine.rules.result import QuestionResult
-from gradeflow_engine.serializations.graded_submissions import GradedSubmissionsSerializerConfig
-from gradeflow_engine.submissions.models import GradedSubmission, RawSubmission, Submission
+from gradeflow_engine.serializations.submissions import SubmissionsSerializerConfig
+from gradeflow_engine.submissions.models import RawSubmission, Submission
 from pydantic import BaseModel, Field
 
 from gradeflow_backend.config import get_settings
@@ -22,8 +23,8 @@ class AdjustableQuestionResult(QuestionResult):
     )
 
 
-class AdjustableGradedSubmission(Submission):
-    results: list[AdjustableQuestionResult]
+class AdjustableSubmission(Submission):
+    result_map: Annotated[dict[QuestionId, AdjustableQuestionResult], Field(default_factory=dict)]  # type: ignore[assignment]
 
 
 class GradingRunRequest(BaseModel):
@@ -31,11 +32,11 @@ class GradingRunRequest(BaseModel):
 
 
 class GradingResponse(BaseModel):
-    graded_submissions: list[AdjustableGradedSubmission]
+    submissions: list[AdjustableSubmission]
 
 
 class GradingDownloadRequest(BaseModel):
-    serializer: GradedSubmissionsSerializerConfig  # discriminated by "format" (csv|json|yaml)
+    serializer: SubmissionsSerializerConfig  # discriminated by "format" (csv|json|yaml)
 
 
 class GradingDownloadResponse(BaseModel):
@@ -104,7 +105,7 @@ class GradingJobSpec(BaseModel):
 class GradingJobResult(BaseModel):
     assessment_id: str
     type: JobType
-    graded_submissions: list[GradedSubmission]
+    submissions: list[Submission]
 
 
 class GradingJob(BaseModel):

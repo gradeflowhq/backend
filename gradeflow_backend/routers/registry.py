@@ -1,6 +1,5 @@
 from fastapi import APIRouter
 from gradeflow_engine.core import (
-    list_available_graded_submissions_serializers,
     list_available_question_set_adapters,
     # Serializers
     list_available_question_set_serializers,
@@ -8,6 +7,7 @@ from gradeflow_engine.core import (
     list_available_raw_submissions_adapters,
     list_available_rubric_adapters,
     list_available_rubric_serializers,
+    list_available_submissions_serializers,
 )
 
 router = APIRouter(prefix="/registry", tags=["registry"])
@@ -27,9 +27,9 @@ def rubric_serializers() -> list[str]:
     return list_available_rubric_serializers()
 
 
-@router.get("/serializers/graded-submissions")
-def graded_submissions_serializers() -> list[str]:
-    return list_available_graded_submissions_serializers()
+@router.get("/serializers/submissions")
+def submissions_serializers() -> list[str]:
+    return list_available_submissions_serializers()
 
 
 # ---------------------------

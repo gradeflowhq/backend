@@ -21,9 +21,11 @@ class Assessment(Base):
 
     question_set_yaml: Mapped[str | None] = mapped_column(Text, nullable=True)
     rubric_yaml: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_data: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_student_id_column: Mapped[str | None] = mapped_column(Text, nullable=True)
+    submissions_config_yaml: Mapped[str | None] = mapped_column(Text, nullable=True)
     submissions_yaml: Mapped[str | None] = mapped_column(Text, nullable=True)
-    graded_submissions_yaml: Mapped[str | None] = mapped_column(Text, nullable=True)
-    graded_submissions_preview_yaml: Mapped[str | None] = mapped_column(Text, nullable=True)
+    preview_yaml: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

@@ -1,9 +1,7 @@
 from logging.config import fileConfig
 
-from sqlalchemy import create_engine
-from sqlalchemy import pool
-
 from alembic import context
+from sqlalchemy import create_engine, pool
 
 # Pull settings and metadata from the application package.
 from gradeflow_backend.config import get_settings

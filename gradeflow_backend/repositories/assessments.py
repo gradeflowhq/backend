@@ -83,14 +83,6 @@ class AssessmentRepository(BaseRepository):
     def get_submissions_config_yaml(self, id: str) -> str | None:
         return self.get(id).submissions_config_yaml
 
-    def set_submissions_yaml(self, id: str, yaml_str: str | None) -> None:
-        a = self.get(id)
-        a.submissions_yaml = yaml_str
-        self.session().flush()
-
-    def get_submissions_yaml(self, id: str) -> str | None:
-        return self.get(id).submissions_yaml
-
     @staticmethod
     def _preview_key(assessment_id: str) -> str:
         return f"preview:{assessment_id}"

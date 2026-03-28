@@ -24,7 +24,6 @@ class Assessment(Base):
     source_data: Mapped[str | None] = mapped_column(Text, nullable=True)
     source_student_id_column: Mapped[str | None] = mapped_column(Text, nullable=True)
     submissions_config_yaml: Mapped[str | None] = mapped_column(Text, nullable=True)
-    submissions_yaml: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

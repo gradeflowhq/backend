@@ -46,15 +46,11 @@ class GradingDownloadResponse(BaseModel):
     media_type: str  # e.g. "text/csv" | "application/json" | "application/yaml"
 
 
-class GradeAdjustment(BaseModel):
+class GradeAdjustmentRequest(BaseModel):
     student_id: str = Field(..., description="Student ID to adjust")
     question_id: str = Field(..., description="Question ID to adjust")
-    adjusted_points: float | None = Field(default=None, description="New points (optional)")
+    adjusted_points: float | None = Field(default=None, ge=0, description="New points (optional)")
     adjusted_feedback: str | None = Field(default=None, description="New feedback (optional)")
-
-
-class GradeAdjustmentRequest(BaseModel):
-    adjustments: list[GradeAdjustment] = Field(..., min_length=1)
 
 
 class GradingLimitConfig(BaseModel):

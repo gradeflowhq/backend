@@ -33,21 +33,24 @@ def test_grading_flow(api: ApiClient) -> None:
         assert isinstance(dl.data, (bytes, bytearray))
 
         # Adjustments: within bounds should succeed
-        adjustments: list[dict[str, object]] = [
-            {
+        api.adjust_grading(
+            created.id,
+            adjustment={
                 "student_id": "s2",
                 "question_id": "q1",
                 "adjusted_points": 1.0,
                 "adjusted_feedback": "Manual override: name accepted.",
             },
-            {
+        )
+        adjusted = api.adjust_grading(
+            created.id,
+            adjustment={
                 "student_id": "s1",
                 "question_id": "q2",
                 "adjusted_points": 1.5,
                 "adjusted_feedback": "Partial credit for score.",
             },
-        ]
-        adjusted = api.adjust_grading(created.id, adjustments=adjustments)
+        )
         assert len(adjusted.submissions) >= 1
 
         # Verify adjusted fields present in GET
@@ -79,7 +82,7 @@ def test_grading_flow(api: ApiClient) -> None:
         # Negative test: out-of-bounds adjustment should be rejected
         bad_resp = api.try_adjust_grading(
             created.id,
-            adjustments=[{"student_id": "s1", "question_id": "q2", "adjusted_points": 3.0}],
+            adjustment={"student_id": "s1", "question_id": "q2", "adjusted_points": 3.0},
         )
         assert bad_resp.status_code == 400, bad_resp.text
 

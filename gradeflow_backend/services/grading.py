@@ -17,8 +17,8 @@ from sqlalchemy.exc import NoResultFound
 from gradeflow_backend.models.assessment import Assessment
 from gradeflow_backend.repositories.assessments import AssessmentRepository
 from gradeflow_backend.repositories.grading_jobs import GradingJobRepository
+from gradeflow_backend.repositories.submissions import SubmissionRepository
 from gradeflow_backend.schemas.grading import (
-    AdjustableQuestionResult,
     AdjustableSubmission,
     GradeAdjustmentRequest,
     GradingDownloadRequest,
@@ -43,9 +43,15 @@ from gradeflow_backend.utils.jobs import build_grading_job
 
 
 class GradingService:
-    def __init__(self, repo: AssessmentRepository, grading_jobs: GradingJobRepository) -> None:
+    def __init__(
+        self,
+        repo: AssessmentRepository,
+        grading_jobs: GradingJobRepository,
+        submission_repo: SubmissionRepository,
+    ) -> None:
         self.repo = repo
         self.grading_jobs = grading_jobs
+        self.submission_repo = submission_repo
 
     # ---------------------------
     # Shared helpers
@@ -173,15 +179,11 @@ class GradingService:
     # ---------------------------
 
     def get(self, assessment_id: str) -> GradingResponse:
-        try:
-            graded_yaml = self.repo.get_submissions_yaml(assessment_id)
-        except NoResultFound as e:
-            raise NotFoundError("Assessment not found") from e
-        if not graded_yaml:
-            return GradingResponse(submissions=[])
-        items: list[dict[str, object]] = yaml.safe_load(graded_yaml) or []
-        adjustable = [AdjustableSubmission.model_validate(obj) for obj in items]
-        return GradingResponse(submissions=adjustable)
+        self._get_assessment(assessment_id)
+        rows = self.submission_repo.list_by_assessment(assessment_id)
+        return GradingResponse(
+            submissions=[SubmissionRepository.to_adjustable_submission(gs) for gs in rows]
+        )
 
     def get_job(self, assessment_id: str, type: JobType, request: Request) -> GradingJob:
         job_id = self.grading_jobs.get_job_id(assessment_id, type)
@@ -190,62 +192,35 @@ class GradingService:
         return build_grading_job(request, job_id)
 
     def delete(self, assessment_id: str) -> None:
-        try:
-            self.repo.set_submissions_yaml(assessment_id, None)
-        except NoResultFound as e:
-            raise NotFoundError("Assessment not found") from e
+        self._get_assessment(assessment_id)
+        self.submission_repo.delete_by_assessment(assessment_id)
 
-    def adjust(self, assessment_id: str, req: GradeAdjustmentRequest) -> GradingResponse:
-        try:
-            graded_yaml = self.repo.get_submissions_yaml(assessment_id)
-        except NoResultFound as e:
-            raise NotFoundError("Assessment not found") from e
-        if not graded_yaml:
-            raise BadRequestError("No graded results to adjust. Run grading first.")
+    def adjust(self, assessment_id: str, adj: GradeAdjustmentRequest) -> GradingResponse:
+        self._get_assessment(assessment_id)
 
-        items: list[dict[str, object]] = yaml.safe_load(graded_yaml) or []
-        graded = [AdjustableSubmission.model_validate(obj) for obj in items]
-
-        index: dict[tuple[str, str], AdjustableQuestionResult] = {}
-        for gs in graded:
-            for qid, res in gs.result_map.items():
-                index[(gs.student_id, qid)] = res
-
-        for adj in req.adjustments:
-            key = (adj.student_id, adj.question_id)
-            if key not in index:
-                raise BadRequestError(
-                    f"No result found: student_id={adj.student_id}, question_id={adj.question_id}"
-                )
-            target = index[key]
-            if adj.adjusted_points is not None:
-                new_points = float(adj.adjusted_points)
-                if new_points < 0:
-                    raise BadRequestError("adjusted_points must be >= 0")
-                if new_points > target.max_points:
-                    raise BadRequestError(
-                        f"adjusted_points ({new_points}) exceeds max_points ({target.max_points})"
-                    )
-                target.adjusted_points = new_points
-            else:
-                target.adjusted_points = None
-            target.adjusted_feedback = (
-                adj.adjusted_feedback if adj.adjusted_feedback is not None else None
+        result = self.submission_repo.get_result(assessment_id, adj.student_id, adj.question_id)
+        if result is None:
+            raise BadRequestError(
+                f"No result found: student_id={adj.student_id}, question_id={adj.question_id}"
             )
-            target.graded = True
+        if adj.adjusted_points is not None and adj.adjusted_points > result.max_points:
+            raise BadRequestError(
+                f"adjusted_points ({adj.adjusted_points}) exceeds max_points ({result.max_points})"
+            )
+        self.submission_repo.update_result(result, adj.adjusted_points, adj.adjusted_feedback)
 
-        payload = [gs.model_dump() for gs in graded]
-        self.repo.set_submissions_yaml(assessment_id, yaml.safe_dump(payload))
-        return GradingResponse(submissions=graded)
+        rows = self.submission_repo.list_by_assessment(assessment_id)
+        return GradingResponse(
+            submissions=[SubmissionRepository.to_adjustable_submission(gs) for gs in rows]
+        )
 
     def download(self, assessment_id: str, req: GradingDownloadRequest) -> GradingDownloadResponse:
         a = self._get_assessment(assessment_id)
-        graded_yaml = a.submissions_yaml
-        if not graded_yaml:
+        rows = self.submission_repo.list_by_assessment(assessment_id)
+        if not rows:
             raise BadRequestError("No graded results to download. Run grading first.")
 
-        items: list[dict[str, object]] = yaml.safe_load(graded_yaml) or []
-        adjustable = [AdjustableSubmission.model_validate(obj) for obj in items]
+        adjustable = [SubmissionRepository.to_adjustable_submission(gs) for gs in rows]
 
         downloadable: list[Submission] = []
         for ags in adjustable:

@@ -6,6 +6,7 @@ from gradeflow_backend.db import get_session, get_valkey
 from gradeflow_backend.dependencies.memberships import member_guard_factory, role_guard_factory
 from gradeflow_backend.repositories.assessments import AssessmentRepository
 from gradeflow_backend.repositories.grading_jobs import GradingJobRepository
+from gradeflow_backend.repositories.submissions import SubmissionRepository
 from gradeflow_backend.schemas.grading import (
     GradeAdjustmentRequest,
     GradingDownloadRequest,
@@ -25,7 +26,11 @@ def get_service(
     db: Session = Depends(get_session),
     valkey_client: valkey.Valkey = Depends(get_valkey),
 ) -> GradingService:
-    return GradingService(AssessmentRepository(db, valkey_client), GradingJobRepository(db))
+    return GradingService(
+        AssessmentRepository(db, valkey_client),
+        GradingJobRepository(db),
+        SubmissionRepository(db),
+    )
 
 
 def get_jobs_service(

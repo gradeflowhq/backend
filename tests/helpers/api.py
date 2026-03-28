@@ -473,19 +473,15 @@ class ApiClient:
         r = self.try_delete_grading(assessment_id=assessment_id)
         assert r.status_code == 204, r.text
 
-    def try_adjust_grading(
-        self, assessment_id: str, adjustments: list[dict[str, object]]
-    ) -> Response:
+    def try_adjust_grading(self, assessment_id: str, adjustment: dict[str, object]) -> Response:
         return self.client.post(
             f"/assessments/{assessment_id}/grading/adjust",
-            json={"adjustments": adjustments},
+            json=adjustment,
             headers=self._auth_header,
         )
 
-    def adjust_grading(
-        self, assessment_id: str, adjustments: list[dict[str, object]]
-    ) -> GradingResponse:
-        r = self.try_adjust_grading(assessment_id=assessment_id, adjustments=adjustments)
+    def adjust_grading(self, assessment_id: str, adjustment: dict[str, object]) -> GradingResponse:
+        r = self.try_adjust_grading(assessment_id=assessment_id, adjustment=adjustment)
         assert r.status_code == 200, r.text
         return GradingResponse.model_validate(r.json())
 

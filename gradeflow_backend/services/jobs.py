@@ -9,6 +9,7 @@ from gradeflow_backend.executors.factory import get_executor
 from gradeflow_backend.repositories.assessments import AssessmentRepository
 from gradeflow_backend.repositories.grading_jobs import GradingJobRepository
 from gradeflow_backend.repositories.one_time_tokens import OneTimeTokenRepository
+from gradeflow_backend.repositories.submissions import SubmissionRepository
 from gradeflow_backend.schemas.grading import (
     GradingJob,
     GradingJobResult,
@@ -25,13 +26,16 @@ class JobsService:
         self.assessments = AssessmentRepository(db, valkey_client)
         self.grading_jobs = GradingJobRepository(db)
         self.tokens = OneTimeTokenRepository(db)
+        self.submissions = SubmissionRepository(db)
         self.executor = get_executor()
 
-    def _set_data(self, assessment_id: str, type: str, yaml_str: str | None) -> None:
+    def _set_data(self, assessment_id: str, type: str, result: GradingJobResult) -> None:
         if type == "preview":
+            payload = [gs.model_dump() for gs in result.submissions]
+            yaml_str = yaml.safe_dump(payload)
             self.assessments.set_preview_yaml(assessment_id, yaml_str)
         elif type == "run":
-            self.assessments.set_submissions_yaml(assessment_id, yaml_str)
+            self.submissions.bulk_replace(assessment_id, result.submissions)
         else:
             raise BadRequestError("Unknown job type")
 
@@ -93,6 +97,4 @@ class JobsService:
             raise NotFoundError("Assessment not found") from e
 
         # Persist results
-        payload = [gs.model_dump() for gs in result.submissions]
-        yaml_str = yaml.safe_dump(payload)
-        self._set_data(result.assessment_id, result.type, yaml_str)
+        self._set_data(result.assessment_id, result.type, result)

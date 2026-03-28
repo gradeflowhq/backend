@@ -45,4 +45,4 @@ def get_session() -> Generator[Session, Any, Any]:
 
 @lru_cache(maxsize=1)
 def get_valkey() -> valkey.Valkey:
-    return valkey.from_url(get_settings().valkey.url, decode_responses=True)
+    return valkey.Valkey.from_url(get_settings().valkey.url, decode_responses=True)

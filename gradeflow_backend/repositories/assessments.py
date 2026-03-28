@@ -5,7 +5,6 @@ from sqlalchemy.exc import NoResultFound
 from sqlalchemy.orm import Session
 
 from gradeflow_backend.config import get_settings
-
 from gradeflow_backend.models import Assessment
 
 from .base import BaseRepository
@@ -92,10 +91,14 @@ class AssessmentRepository(BaseRepository):
     def get_submissions_yaml(self, id: str) -> str | None:
         return self.get(id).submissions_yaml
 
+    @staticmethod
+    def _preview_key(assessment_id: str) -> str:
+        return f"preview:{assessment_id}"
+
     def set_preview_yaml(self, assessment_id: str, yaml_str: str | None) -> None:
         if self._valkey is None:
             raise RuntimeError("Valkey client required for preview operations")
-        key = f"preview:{assessment_id}"
+        key = self._preview_key(assessment_id)
         if yaml_str is None:
             self._valkey.delete(key)
         else:
@@ -105,5 +108,5 @@ class AssessmentRepository(BaseRepository):
     def get_preview_yaml(self, assessment_id: str) -> str | None:
         if self._valkey is None:
             raise RuntimeError("Valkey client required for preview operations")
-        val: str | None = self._valkey.get(f"preview:{assessment_id}")
-        return val
+        key = self._preview_key(assessment_id)
+        return str(self._valkey.get(key)) if self._valkey.exists(key) else None

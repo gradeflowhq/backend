@@ -17,7 +17,7 @@ def test_env() -> Generator[None, None, None]:
     settings = get_settings()
 
     # Security (deterministic values for tests)
-    settings.security.jwt_secret = "test-secret"
+    settings.security.jwt_secret = "test-secret-for-gradeflow-at-least-32-bytes"
     settings.security.jwt_algorithm = "HS256"
     settings.security.jwt_issuer = "gradeflow-api"
     settings.security.jwt_audience = "gradeflow-clients"

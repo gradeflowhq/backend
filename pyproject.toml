@@ -14,6 +14,7 @@ dependencies = [
   "python-multipart~=0.0.20",
   "email-validator~=2.3",
   "python-nomad~=2.1.0",
+  "valkey~=6.0",
   "gradeflow-engine @ git+https://github.com/gradeflowhq/engine",
 ]
 
@@ -30,6 +31,7 @@ dev = [
   "ruff>=0.14",
   "httpx>=0.28",
   "types-PyYAML>=6.0.0",
+  "fakeredis[valkey]>=2.0",
 ]
 
 [tool.pytest.ini_options]

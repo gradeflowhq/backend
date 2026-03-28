@@ -1,6 +1,8 @@
 from collections.abc import Generator
+from functools import lru_cache
 from typing import Any
 
+import valkey
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine, make_url
 from sqlalchemy.orm import Session, sessionmaker
@@ -39,3 +41,8 @@ def get_session() -> Generator[Session, Any, Any]:
         raise
     finally:
         db.close()
+
+
+@lru_cache(maxsize=1)
+def get_valkey() -> valkey.Valkey:
+    return valkey.from_url(get_settings().valkey.url, decode_responses=True)

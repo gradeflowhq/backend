@@ -1,4 +1,5 @@
 import yaml
+import valkey
 from fastapi import Request
 from sqlalchemy.exc import NoResultFound
 from sqlalchemy.orm import Session
@@ -19,9 +20,9 @@ from gradeflow_backend.utils.jobs import build_callback_url, build_grading_job
 
 
 class JobsService:
-    def __init__(self, db: Session) -> None:
+    def __init__(self, db: Session, valkey_client: valkey.Valkey) -> None:
         self.db = db
-        self.assessments = AssessmentRepository(db)
+        self.assessments = AssessmentRepository(db, valkey_client)
         self.grading_jobs = GradingJobRepository(db)
         self.tokens = OneTimeTokenRepository(db)
         self.executor = get_executor()

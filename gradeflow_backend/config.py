@@ -76,6 +76,14 @@ class ExecutorSettings(BaseModel):
     nomad_memory_mb: int = Field(default=512, description="Nomad task memory (MB)")
 
 
+class ValkeySettings(BaseModel):
+    url: str = Field(default="valkey://gradeflow-valkey:6379/0", alias="VALKEY_URL")
+    preview_ttl_s: int = Field(
+        default=300,
+        description="TTL (seconds) for preview results stored in Valkey. Defaults to 5 minutes.",
+    )
+
+
 class GradingSettings(BaseModel):
     max_submission_preview: int = Field(
         default=20,
@@ -97,6 +105,7 @@ class AppSettings(BaseSettings):
     cors: CorsSettings = CorsSettings()
     executor: ExecutorSettings = ExecutorSettings()
     grading: GradingSettings = GradingSettings()
+    valkey: ValkeySettings = ValkeySettings()
 
 
 @lru_cache(maxsize=1)

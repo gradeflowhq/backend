@@ -286,10 +286,7 @@ class GradingService:
         )
 
     def get_preview(self, assessment_id: str) -> GradingResponse:
-        try:
-            yaml_str = self.repo.get_preview_yaml(assessment_id)
-        except NoResultFound as e:
-            raise NotFoundError("Assessment not found") from e
+        yaml_str = self.repo.get_preview_yaml(assessment_id)
         if not yaml_str:
             return GradingResponse(submissions=[])
         items: list[dict[str, object]] = yaml.safe_load(yaml_str) or []

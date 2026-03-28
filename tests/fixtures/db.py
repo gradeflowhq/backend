@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from fakeredis import FakeValkey
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine, make_url
 from sqlalchemy.orm import Session, sessionmaker
@@ -46,3 +47,8 @@ def test_session(test_engine: Engine) -> Generator[Session, None, None]:
         raise
     finally:
         db.close()
+
+
+@pytest.fixture(scope="function")
+def fake_valkey() -> FakeValkey:
+    return FakeValkey(decode_responses=True)

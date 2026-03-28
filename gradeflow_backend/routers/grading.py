@@ -1,7 +1,8 @@
+import valkey
 from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy.orm import Session
 
-from gradeflow_backend.db import get_session
+from gradeflow_backend.db import get_session, get_valkey
 from gradeflow_backend.dependencies.memberships import member_guard_factory, role_guard_factory
 from gradeflow_backend.repositories.assessments import AssessmentRepository
 from gradeflow_backend.repositories.grading_jobs import GradingJobRepository
@@ -20,12 +21,18 @@ from gradeflow_backend.services.jobs import JobsService
 router = APIRouter(prefix="/assessments/{assessment_id}/grading", tags=["grading"])
 
 
-def get_service(db: Session = Depends(get_session)) -> GradingService:
-    return GradingService(AssessmentRepository(db), GradingJobRepository(db))
+def get_service(
+    db: Session = Depends(get_session),
+    valkey_client: valkey.Valkey = Depends(get_valkey),
+) -> GradingService:
+    return GradingService(AssessmentRepository(db, valkey_client), GradingJobRepository(db))
 
 
-def get_jobs_service(db: Session = Depends(get_session)) -> JobsService:
-    return JobsService(db)
+def get_jobs_service(
+    db: Session = Depends(get_session),
+    valkey_client: valkey.Valkey = Depends(get_valkey),
+) -> JobsService:
+    return JobsService(db, valkey_client)
 
 
 @router.get("", response_model=GradingResponse)

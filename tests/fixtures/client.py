@@ -4,16 +4,17 @@ from urllib.parse import urlparse
 
 import httpx
 import pytest
+from fakeredis import FakeValkey
 from fastapi.testclient import TestClient
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from gradeflow_backend.db import get_session
+from gradeflow_backend.db import get_session, get_valkey
 from gradeflow_backend.main import app
 
 
 @pytest.fixture(scope="function")
-def client(test_engine: Engine) -> Generator[TestClient, None, None]:
+def client(test_engine: Engine, fake_valkey: FakeValkey) -> Generator[TestClient, None, None]:
     TestingSessionLocal = sessionmaker(bind=test_engine, autoflush=False, autocommit=False)
 
     def _override_get_session() -> Generator[Session, None, None]:
@@ -28,6 +29,7 @@ def client(test_engine: Engine) -> Generator[TestClient, None, None]:
             db.close()
 
     app.dependency_overrides[get_session] = _override_get_session
+    app.dependency_overrides[get_valkey] = lambda: fake_valkey
 
     with TestClient(app) as c:
         yield c

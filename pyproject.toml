@@ -35,6 +35,9 @@ dev = [
   "fakeredis[valkey]>=2.0",
 ]
 
+[tool.setuptools.packages.find]
+include = ["gradeflow_backend*"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 

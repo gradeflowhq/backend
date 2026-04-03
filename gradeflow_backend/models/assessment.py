@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy import DateTime, String, Text, func
+from sqlalchemy.dialects.mysql import MEDIUMTEXT
 from sqlalchemy.ext.associationproxy import AssociationProxy, association_proxy
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -21,7 +22,9 @@ class Assessment(Base):
 
     question_set_yaml: Mapped[str | None] = mapped_column(Text, nullable=True)
     rubric_yaml: Mapped[str | None] = mapped_column(Text, nullable=True)
-    source_data: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_data: Mapped[str | None] = mapped_column(
+        Text().with_variant(MEDIUMTEXT, "mysql", "mariadb"), nullable=True
+    )
     source_student_id_column: Mapped[str | None] = mapped_column(Text, nullable=True)
     submissions_config_yaml: Mapped[str | None] = mapped_column(Text, nullable=True)
 

@@ -36,6 +36,7 @@ class JobsService:
             self.assessments.set_preview_yaml(assessment_id, yaml_str)
         elif type == "run":
             self.submissions.bulk_replace(assessment_id, result.submissions)
+            self.assessments.stamp_results_updated_at(result.assessment_id)
         else:
             raise BadRequestError("Unknown job type")
 
@@ -45,7 +46,7 @@ class JobsService:
         """
         try:
             # Validate assessment exists
-            _ = self.assessments.get(spec.assessment_id)
+            self.assessments.get(spec.assessment_id)
 
             # Create one-time token and build callback URL
             tok = self.tokens.create()
@@ -92,7 +93,7 @@ class JobsService:
 
         # Assessment validation
         try:
-            _ = self.assessments.get(result.assessment_id)
+            self.assessments.get(result.assessment_id)
         except NoResultFound as e:
             raise NotFoundError("Assessment not found") from e
 

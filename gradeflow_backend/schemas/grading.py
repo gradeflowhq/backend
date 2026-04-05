@@ -10,6 +10,7 @@ from gradeflow_engine.submissions.models import RawSubmission, Submission
 from pydantic import BaseModel, Field
 
 from gradeflow_backend.config import get_settings
+from gradeflow_backend.schemas.status import SectionStatus
 
 grading_settings = get_settings().grading
 
@@ -33,6 +34,7 @@ class GradingRunRequest(BaseModel):
 
 class GradingResponse(BaseModel):
     submissions: list[AdjustableSubmission]
+    status: SectionStatus
 
 
 class GradingDownloadRequest(BaseModel):

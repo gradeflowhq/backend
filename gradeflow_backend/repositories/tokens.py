@@ -1,9 +1,10 @@
-from datetime import UTC, datetime
+from datetime import datetime
 
 from sqlalchemy.exc import NoResultFound
 from sqlalchemy.orm import Session
 
 from gradeflow_backend.models import RefreshToken
+from gradeflow_backend.utils.datetime import ensure_utc
 
 from .base import BaseRepository
 
@@ -30,21 +31,11 @@ class RefreshTokenRepository(BaseRepository):
             rt.revoked = True
             self.session().flush()
 
-    def _ensure_utc(self, dt: datetime) -> datetime:
-        # Normalize to timezone-aware UTC
-        if dt.tzinfo is None:
-            return dt.replace(tzinfo=UTC)
-        return dt.astimezone(UTC)
-
     def is_valid(self, jti: str, now: datetime) -> bool:
         rt = self.session().get(RefreshToken, jti)
-        if not rt:
+        if not rt or rt.revoked:
             return False
-        if rt.revoked:
-            return False
-        exp = self._ensure_utc(rt.expires_at)
-        now_utc = self._ensure_utc(now)
-        return exp > now_utc
+        return ensure_utc(rt.expires_at) > ensure_utc(now)
 
     def delete_user_tokens(self, user_id: str) -> None:
         self.session().query(RefreshToken).filter(RefreshToken.user_id == user_id).delete()

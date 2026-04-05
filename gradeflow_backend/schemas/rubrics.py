@@ -5,6 +5,8 @@ from gradeflow_engine.rules.types import RuleValidationError
 from gradeflow_engine.serializations.rubric import RubricSerializerConfig
 from pydantic import BaseModel, Field
 
+from gradeflow_backend.schemas.status import SectionStatus
+
 
 class SetRubricByModelRequest(BaseModel):
     rubric: Rubric
@@ -22,6 +24,7 @@ class ImportRubricRequest(BaseModel):
 
 class RubricResponse(BaseModel):
     rubric: Rubric
+    status: SectionStatus
 
 
 class ValidateRubricRequest(BaseModel):

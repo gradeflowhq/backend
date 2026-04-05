@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from gradeflow_backend.config import get_settings
 from gradeflow_backend.models import Assessment
+from gradeflow_backend.utils.datetime import utcnow
 
 from .base import BaseRepository
 
@@ -15,10 +16,12 @@ class AssessmentRepository(BaseRepository):
         super().__init__(session)
         self._valkey = valkey_client
 
+    # ------------------------------------------------------------------
     # CRUD
+    # ------------------------------------------------------------------
+
     def create(self, name: str, description: str | None) -> Assessment:
-        _id = uuid.uuid4().hex
-        a = Assessment(id=_id, name=name, description=description)
+        a = Assessment(id=uuid.uuid4().hex, name=name, description=description)
         self.session().add(a)
         self.session().flush()
         return a
@@ -46,10 +49,14 @@ class AssessmentRepository(BaseRepository):
         self.session().delete(a)
         self.session().flush()
 
-    # State setters/getters (JSON blobs)
+    # ------------------------------------------------------------------
+    # YAML blob setters / getters
+    # ------------------------------------------------------------------
+
     def set_question_set_yaml(self, id: str, yaml_str: str | None) -> None:
         a = self.get(id)
         a.question_set_yaml = yaml_str
+        a.question_set_updated_at = utcnow()
         self.session().flush()
 
     def get_question_set_yaml(self, id: str) -> str | None:
@@ -58,6 +65,7 @@ class AssessmentRepository(BaseRepository):
     def set_rubric_yaml(self, id: str, yaml_str: str | None) -> None:
         a = self.get(id)
         a.rubric_yaml = yaml_str
+        a.rubric_updated_at = utcnow()
         self.session().flush()
 
     def get_rubric_yaml(self, id: str) -> str | None:
@@ -67,6 +75,7 @@ class AssessmentRepository(BaseRepository):
         a = self.get(id)
         a.source_data = data
         a.source_student_id_column = student_id_column
+        a.source_updated_at = utcnow()
         self.session().flush()
 
     def get_source_data(self, id: str) -> str | None:
@@ -78,27 +87,41 @@ class AssessmentRepository(BaseRepository):
     def set_submissions_config_yaml(self, id: str, data: str | None) -> None:
         a = self.get(id)
         a.submissions_config_yaml = data
+        a.source_updated_at = utcnow()
         self.session().flush()
 
     def get_submissions_config_yaml(self, id: str) -> str | None:
         return self.get(id).submissions_config_yaml
 
+    def stamp_results_updated_at(self, id: str) -> None:
+        """Stamp results_updated_at after a successful grading run."""
+        a = self.get(id)
+        a.results_updated_at = utcnow()
+        self.session().flush()
+
+    # ------------------------------------------------------------------
+    # Preview (Valkey)
+    # ------------------------------------------------------------------
+
     @staticmethod
     def _preview_key(assessment_id: str) -> str:
         return f"preview:{assessment_id}"
 
-    def set_preview_yaml(self, assessment_id: str, yaml_str: str | None) -> None:
+    def _require_valkey(self) -> valkey.Valkey:
         if self._valkey is None:
             raise RuntimeError("Valkey client required for preview operations")
+        return self._valkey
+
+    def set_preview_yaml(self, assessment_id: str, yaml_str: str | None) -> None:
+        client = self._require_valkey()
         key = self._preview_key(assessment_id)
         if yaml_str is None:
-            self._valkey.delete(key)
+            client.delete(key)
         else:
-            ttl = get_settings().valkey.preview_ttl_s
-            self._valkey.set(key, yaml_str, ex=ttl)
+            client.set(key, yaml_str, ex=get_settings().valkey.preview_ttl_s)
 
     def get_preview_yaml(self, assessment_id: str) -> str | None:
-        if self._valkey is None:
-            raise RuntimeError("Valkey client required for preview operations")
+        client = self._require_valkey()
         key = self._preview_key(assessment_id)
-        return str(self._valkey.get(key)) if self._valkey.exists(key) else None
+        val = client.get(key)
+        return str(val) if val is not None else None

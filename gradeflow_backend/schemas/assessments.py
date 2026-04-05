@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from pydantic import BaseModel, Field
 
 
@@ -15,8 +17,12 @@ class AssessmentResponse(BaseModel):
     id: str
     name: str
     description: str | None = None
-    created_at: str
-    updated_at: str
+    created_at: datetime
+    updated_at: datetime
+    source_updated_at: datetime | None = None
+    question_set_updated_at: datetime | None = None
+    rubric_updated_at: datetime | None = None
+    results_updated_at: datetime | None = None
 
 
 class AssessmentsListResponse(BaseModel):

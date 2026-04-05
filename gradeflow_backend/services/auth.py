@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy.exc import NoResultFound
 
+from gradeflow_backend.models.user import User
 from gradeflow_backend.repositories.tokens import RefreshTokenRepository
 from gradeflow_backend.repositories.users import UserRepository
 from gradeflow_backend.schemas.auth import (
@@ -20,64 +21,98 @@ from gradeflow_backend.security.jwt import (
     create_refresh_token,
     decode_token,
 )
-from gradeflow_backend.security.passwords import (
-    hash_password,
-    needs_rehash,
-    verify_password,
-)
+from gradeflow_backend.security.passwords import hash_password, needs_rehash, verify_password
 from gradeflow_backend.services.exceptions import BadRequestError, NotFoundError
+from gradeflow_backend.utils.datetime import utcnow
+
+
+def _user_to_me(u: User) -> MeResponse:
+    return MeResponse(id=u.id, email=u.email, name=u.name)
 
 
 class AuthService:
     def __init__(self, users: UserRepository, tokens: RefreshTokenRepository) -> None:
-        self.users = users
-        self.tokens = tokens
+        self._users = users
+        self._tokens = tokens
 
-    def _now(self) -> datetime:
-        return datetime.now(UTC)
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
 
     def signup(self, req: SignupRequest) -> TokenPairResponse:
-        if self.users.get_by_email(req.email):
+        if self._users.get_by_email(req.email):
             raise BadRequestError("Email already registered")
+
         user_id = uuid.uuid4().hex
-        pwd_hash = hash_password(req.password)
-        u = self.users.create(user_id, req.email, req.name, pwd_hash)
-
-        # Issue tokens
-        access = create_access_token(sub=u.id)
-        refresh = create_refresh_token(sub=u.id)
-        # Persist refresh token jti with expiry
-        payload = decode_token(refresh)
-        assert_token_type(payload, "refresh")
-        jti = str(payload["jti"])
-        exp_ts = int(payload["exp"])
-        expires_at = datetime.fromtimestamp(exp_ts, tz=UTC)
-        self.tokens.create(jti=jti, user_id=u.id, expires_at=expires_at)
-
-        return TokenPairResponse(access_token=access, refresh_token=refresh)
+        u = self._users.create(user_id, req.email, req.name, hash_password(req.password))
+        return self._issue_token_pair(u.id)
 
     def login(self, req: LoginRequest) -> TokenPairResponse:
-        u = self.users.get_by_email(req.email)
+        u = self._users.get_by_email(req.email)
         if not u or not verify_password(req.password, u.password_hash):
             raise BadRequestError("Invalid credentials")
-        # Optional: rehash if needed
+
         if needs_rehash(u.password_hash):
             u.password_hash = hash_password(req.password)
 
-        access = create_access_token(sub=u.id)
-        refresh = create_refresh_token(sub=u.id)
-        payload = decode_token(refresh)
-        assert_token_type(payload, "refresh")
-        jti = str(payload["jti"])
-        exp_ts = int(payload["exp"])
-        expires_at = datetime.fromtimestamp(exp_ts, tz=UTC)
-        self.tokens.create(jti=jti, user_id=u.id, expires_at=expires_at)
-
-        return TokenPairResponse(access_token=access, refresh_token=refresh)
+        return self._issue_token_pair(u.id)
 
     def refresh(self, req: RefreshRequest) -> TokenPairResponse:
+        user_id, jti = self._decode_refresh_token(req.refresh_token)
+
+        if not self._tokens.is_valid(jti, utcnow()):
+            raise BadRequestError("Refresh token expired or revoked")
+
+        self._tokens.revoke(jti)
+        return self._issue_token_pair(user_id)
+
+    def logout(self, user_id: str) -> None:
+        self._tokens.delete_user_tokens(user_id)
+
+    def me(self, user_id: str) -> MeResponse:
+        return _user_to_me(self._get_user_or_404(user_id))
+
+    def update_me(self, user_id: str, req: UpdateMeRequest) -> MeResponse:
+        u = self._get_user_or_404(user_id)
+        self._verify_sensitive_change(req, u)
+
+        u = self._users.update(
+            user_id,
+            email=self._resolve_new_email(req, u, user_id),
+            name=req.name,
+            password_hash=self._resolve_new_password_hash(req),
+        )
+        return _user_to_me(u)
+
+    # ------------------------------------------------------------------
+    # Token helpers
+    # ------------------------------------------------------------------
+
+    def _issue_token_pair(self, user_id: str) -> TokenPairResponse:
+        """
+        Mint a fresh access + refresh token pair, persist the refresh token's
+        JTI, and return the response schema.
+        """
+        access = create_access_token(sub=user_id)
+        refresh = create_refresh_token(sub=user_id)
+
+        payload = decode_token(refresh)
+        assert_token_type(payload, "refresh")
+
+        self._tokens.create(
+            jti=str(payload["jti"]),
+            user_id=user_id,
+            expires_at=datetime.fromtimestamp(int(payload["exp"]), tz=UTC),
+        )
+        return TokenPairResponse(access_token=access, refresh_token=refresh)
+
+    def _decode_refresh_token(self, token: str) -> tuple[str, str]:
+        """
+        Decode and validate a refresh token string.
+        Returns (user_id, jti) or raises BadRequestError.
+        """
         try:
-            payload = decode_token(req.refresh_token)
+            payload = decode_token(token)
             assert_token_type(payload, "refresh")
         except JwtError as e:
             raise BadRequestError("Invalid refresh token") from e
@@ -87,70 +122,51 @@ class AuthService:
         if not user_id or not jti:
             raise BadRequestError("Invalid refresh token")
 
-        # Check stored token validity and revoke it (rotation)
-        now = self._now()
-        if not self.tokens.is_valid(jti, now):
-            raise BadRequestError("Refresh token expired or revoked")
-        self.tokens.revoke(jti)
+        return user_id, jti
 
-        # Issue new pair
-        access = create_access_token(sub=user_id)
-        refresh = create_refresh_token(sub=user_id)
-        new_payload = decode_token(refresh)
-        assert_token_type(new_payload, "refresh")
-        new_jti = str(new_payload["jti"])
-        exp_ts = int(new_payload["exp"])
-        expires_at = datetime.fromtimestamp(exp_ts, tz=UTC)
-        self.tokens.create(jti=new_jti, user_id=user_id, expires_at=expires_at)
+    # ------------------------------------------------------------------
+    # User helpers
+    # ------------------------------------------------------------------
 
-        return TokenPairResponse(access_token=access, refresh_token=refresh)
-
-    def logout(self, user_id: str) -> None:
-        # Revoke all refresh tokens for the user
-        self.tokens.delete_user_tokens(user_id)
-
-    def me(self, user_id: str) -> MeResponse:
+    def _get_user_or_404(self, user_id: str) -> User:
         try:
-            u = self.users.get(user_id)
-        except NoResultFound as e:
-            raise NotFoundError("User not found") from e
-        return MeResponse(id=u.id, email=u.email, name=u.name)
-
-    def update_me(self, user_id: str, req: UpdateMeRequest) -> MeResponse:
-        try:
-            u = self.users.get(user_id)
+            return self._users.get(user_id)
         except NoResultFound as e:
             raise NotFoundError("User not found") from e
 
-        # Sensitive changes (email or password) require current_password verification
-        changing_sensitive = req.email is not None or req.new_password is not None
-        if changing_sensitive:
-            if not req.current_password:
-                raise BadRequestError("current_password is required to change email or password")
-            if not verify_password(req.current_password, u.password_hash):
-                raise BadRequestError("current_password is incorrect")
+    def _verify_sensitive_change(self, req: UpdateMeRequest, u: User) -> None:
+        """
+        Raise BadRequestError if the request touches email/password but
+        current_password is absent or incorrect.
+        """
+        if req.email is None and req.new_password is None:
+            return
+        if not req.current_password:
+            raise BadRequestError("current_password is required to change email or password")
+        if not verify_password(req.current_password, u.password_hash):
+            raise BadRequestError("current_password is incorrect")
 
-        # Resolve fields to update
-        new_email: str | None = None
-        if req.email is not None:
-            normalised = req.email.strip().lower()
-            if normalised != u.email.lower():
-                existing = self.users.get_by_email(normalised)
-                if existing is not None and existing.id != user_id:
-                    raise BadRequestError("Email already in use")
-                new_email = normalised
+    def _resolve_new_email(self, req: UpdateMeRequest, u: User, user_id: str) -> str | None:
+        """
+        Return the normalised new email if it differs from the current one,
+        None if unchanged or not requested.
+        """
+        if req.email is None:
+            return None
 
-        new_password_hash: str | None = None
-        if req.new_password is not None:
-            new_password_hash = hash_password(req.new_password)
+        normalised = req.email.strip().lower()
+        if normalised == u.email.lower():
+            return None  # no actual change — skip the update
 
-        # name=None means "not provided / no change"; empty string is a valid name
-        new_name: str | None = req.name  # passed through as-is; None -> no-op in repo
+        existing = self._users.get_by_email(normalised)
+        if existing is not None and existing.id != user_id:
+            raise BadRequestError("Email already in use")
 
-        u = self.users.update(
-            user_id,
-            email=new_email,
-            name=new_name,
-            password_hash=new_password_hash,
-        )
-        return MeResponse(id=u.id, email=u.email, name=u.name)
+        return normalised
+
+    @staticmethod
+    def _resolve_new_password_hash(req: UpdateMeRequest) -> str | None:
+        """Return a freshly hashed password, or None if not being changed."""
+        if req.new_password is None:
+            return None
+        return hash_password(req.new_password)

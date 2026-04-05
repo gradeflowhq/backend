@@ -1,9 +1,7 @@
 from fastapi import APIRouter, Depends, status
-from sqlalchemy.orm import Session
 
-from gradeflow_backend.db import get_session
 from gradeflow_backend.dependencies.memberships import member_guard_factory, role_guard_factory
-from gradeflow_backend.repositories.assessments import AssessmentRepository
+from gradeflow_backend.dependencies.services import get_rubric_service
 from gradeflow_backend.schemas.rubrics import (
     CoverageRequest,
     CoverageResponse,
@@ -19,14 +17,10 @@ from gradeflow_backend.services.rubrics import RubricService
 router = APIRouter(prefix="/assessments/{assessment_id}/rubric", tags=["rubrics"])
 
 
-def get_service(db: Session = Depends(get_session)) -> RubricService:
-    return RubricService(AssessmentRepository(db))
-
-
 @router.get("", response_model=RubricResponse)
 def get_rubric(
     assessment_id: str,
-    svc: RubricService = Depends(get_service),
+    svc: RubricService = Depends(get_rubric_service),
     _u: str = Depends(member_guard_factory()),
 ) -> RubricResponse:
     return svc.get(assessment_id)
@@ -36,7 +30,7 @@ def get_rubric(
 def set_rubric_by_model(
     assessment_id: str,
     req: SetRubricByModelRequest,
-    svc: RubricService = Depends(get_service),
+    svc: RubricService = Depends(get_rubric_service),
     _u: str = Depends(role_guard_factory("editor")),
 ) -> RubricResponse:
     return svc.set_by_model(assessment_id, req)
@@ -46,7 +40,7 @@ def set_rubric_by_model(
 def set_rubric_by_data(
     assessment_id: str,
     req: LoadRubricRequest,
-    svc: RubricService = Depends(get_service),
+    svc: RubricService = Depends(get_rubric_service),
     _u: str = Depends(role_guard_factory("editor")),
 ) -> RubricResponse:
     return svc.set_by_data(assessment_id, req)
@@ -56,7 +50,7 @@ def set_rubric_by_data(
 def import_rubric(
     assessment_id: str,
     req: ImportRubricRequest,
-    svc: RubricService = Depends(get_service),
+    svc: RubricService = Depends(get_rubric_service),
     _u: str = Depends(role_guard_factory("editor")),
 ) -> RubricResponse:
     return svc.set_by_adapter(assessment_id, req)
@@ -66,7 +60,7 @@ def import_rubric(
 def validate_rubric(
     assessment_id: str,
     req: ValidateRubricRequest,
-    svc: RubricService = Depends(get_service),
+    svc: RubricService = Depends(get_rubric_service),
     _u: str = Depends(member_guard_factory()),
 ) -> ValidateRubricResponse:
     return svc.validate(assessment_id, req)
@@ -76,7 +70,7 @@ def validate_rubric(
 def rubric_coverage(
     assessment_id: str,
     req: CoverageRequest,
-    svc: RubricService = Depends(get_service),
+    svc: RubricService = Depends(get_rubric_service),
     _u: str = Depends(member_guard_factory()),
 ) -> CoverageResponse:
     return svc.coverage(assessment_id, req)
@@ -85,7 +79,7 @@ def rubric_coverage(
 @router.delete("", status_code=status.HTTP_204_NO_CONTENT)
 def delete_rubric(
     assessment_id: str,
-    svc: RubricService = Depends(get_service),
+    svc: RubricService = Depends(get_rubric_service),
     _u: str = Depends(role_guard_factory("editor")),
 ) -> None:
     svc.delete(assessment_id)

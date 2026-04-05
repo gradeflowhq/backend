@@ -1,12 +1,7 @@
-import valkey
 from fastapi import APIRouter, Depends, Request, status
-from sqlalchemy.orm import Session
 
-from gradeflow_backend.db import get_session, get_valkey
 from gradeflow_backend.dependencies.memberships import member_guard_factory, role_guard_factory
-from gradeflow_backend.repositories.assessments import AssessmentRepository
-from gradeflow_backend.repositories.grading_jobs import GradingJobRepository
-from gradeflow_backend.repositories.submissions import SubmissionRepository
+from gradeflow_backend.dependencies.services import get_grading_service, get_jobs_service
 from gradeflow_backend.schemas.grading import (
     GradeAdjustmentRequest,
     GradingDownloadRequest,
@@ -22,28 +17,10 @@ from gradeflow_backend.services.jobs import JobsService
 router = APIRouter(prefix="/assessments/{assessment_id}/grading", tags=["grading"])
 
 
-def get_service(
-    db: Session = Depends(get_session),
-    valkey_client: valkey.Valkey = Depends(get_valkey),
-) -> GradingService:
-    return GradingService(
-        AssessmentRepository(db, valkey_client),
-        GradingJobRepository(db),
-        SubmissionRepository(db),
-    )
-
-
-def get_jobs_service(
-    db: Session = Depends(get_session),
-    valkey_client: valkey.Valkey = Depends(get_valkey),
-) -> JobsService:
-    return JobsService(db, valkey_client)
-
-
 @router.get("", response_model=GradingResponse)
 def get_grading(
     assessment_id: str,
-    svc: GradingService = Depends(get_service),
+    svc: GradingService = Depends(get_grading_service),
     _u: str = Depends(member_guard_factory()),
 ) -> GradingResponse:
     return svc.get(assessment_id)
@@ -53,7 +30,7 @@ def get_grading(
 def get_grading_job(
     assessment_id: str,
     request: Request,
-    svc: GradingService = Depends(get_service),
+    svc: GradingService = Depends(get_grading_service),
     _u: str = Depends(member_guard_factory()),
 ) -> GradingJob:
     return svc.get_job(assessment_id, "run", request)
@@ -64,18 +41,18 @@ def run_grading(
     assessment_id: str,
     req: GradingRunRequest,
     request: Request,
-    svc: GradingService = Depends(get_service),
+    svc: GradingService = Depends(get_grading_service),
     jobs: JobsService = Depends(get_jobs_service),
     _u: str = Depends(role_guard_factory("editor")),
 ) -> GradingJob:
-    return svc.run(assessment_id, req, request, jobs)
+    return svc.run(assessment_id, request, jobs)
 
 
 @router.post("/adjust", response_model=GradingResponse, status_code=status.HTTP_200_OK)
 def adjust_grading(
     assessment_id: str,
     req: GradeAdjustmentRequest,
-    svc: GradingService = Depends(get_service),
+    svc: GradingService = Depends(get_grading_service),
     _u: str = Depends(role_guard_factory("editor")),
 ) -> GradingResponse:
     return svc.adjust(assessment_id, req)
@@ -85,7 +62,7 @@ def adjust_grading(
 def download_grading(
     assessment_id: str,
     req: GradingDownloadRequest,
-    svc: GradingService = Depends(get_service),
+    svc: GradingService = Depends(get_grading_service),
     _u: str = Depends(member_guard_factory()),
 ) -> GradingDownloadResponse:
     return svc.download(assessment_id, req)
@@ -94,7 +71,7 @@ def download_grading(
 @router.delete("", status_code=status.HTTP_204_NO_CONTENT)
 def delete_grading(
     assessment_id: str,
-    svc: GradingService = Depends(get_service),
+    svc: GradingService = Depends(get_grading_service),
     _u: str = Depends(role_guard_factory("editor")),
 ) -> None:
     svc.delete(assessment_id)
@@ -105,7 +82,7 @@ def run_grading_preview(
     assessment_id: str,
     req: GradingPreviewRequest,
     request: Request,
-    svc: GradingService = Depends(get_service),
+    svc: GradingService = Depends(get_grading_service),
     jobs: JobsService = Depends(get_jobs_service),
     _u: str = Depends(member_guard_factory()),
 ) -> GradingJob:
@@ -115,7 +92,7 @@ def run_grading_preview(
 @router.get("/preview", response_model=GradingResponse, status_code=status.HTTP_200_OK)
 def get_grading_preview(
     assessment_id: str,
-    svc: GradingService = Depends(get_service),
+    svc: GradingService = Depends(get_grading_service),
     _u: str = Depends(member_guard_factory()),
 ) -> GradingResponse:
     return svc.get_preview(assessment_id)
@@ -125,7 +102,7 @@ def get_grading_preview(
 def get_grading_preview_job(
     assessment_id: str,
     request: Request,
-    svc: GradingService = Depends(get_service),
+    svc: GradingService = Depends(get_grading_service),
     _u: str = Depends(member_guard_factory()),
 ) -> GradingJob:
     return svc.get_job(assessment_id, "preview", request)

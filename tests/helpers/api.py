@@ -376,10 +376,7 @@ class ApiClient:
         r = self.try_upload_source_data(assessment_id, csv_str)
         if r.status_code != 200:
             return r
-        return self.client.put(
-            f"/assessments/{assessment_id}/submissions/import",
-            headers=self._auth_header,
-        )
+        return self.try_get_submissions(assessment_id)
 
     def try_get_submissions(self, assessment_id: str) -> Response:
         return self.client.get(

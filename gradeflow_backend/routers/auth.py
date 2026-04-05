@@ -1,11 +1,8 @@
 from fastapi import APIRouter, Depends, status
 from fastapi.security import OAuth2PasswordRequestForm
-from sqlalchemy.orm import Session
 
-from gradeflow_backend.db import get_session
 from gradeflow_backend.dependencies.auth import get_current_user_id
-from gradeflow_backend.repositories.tokens import RefreshTokenRepository
-from gradeflow_backend.repositories.users import UserRepository
+from gradeflow_backend.dependencies.services import get_auth_service
 from gradeflow_backend.schemas.auth import (
     LoginRequest,
     MeResponse,
@@ -19,14 +16,11 @@ from gradeflow_backend.services.auth import AuthService
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-def get_service(db: Session = Depends(get_session)) -> AuthService:
-    users = UserRepository(db)
-    tokens = RefreshTokenRepository(db)
-    return AuthService(users, tokens)
-
-
 @router.post("/signup", response_model=TokenPairResponse, status_code=status.HTTP_201_CREATED)
-def signup(req: SignupRequest, svc: AuthService = Depends(get_service)) -> TokenPairResponse:
+def signup(
+    req: SignupRequest,
+    svc: AuthService = Depends(get_auth_service),
+) -> TokenPairResponse:
     return svc.signup(req)
 
 
@@ -39,22 +33,24 @@ def signup(req: SignupRequest, svc: AuthService = Depends(get_service)) -> Token
 )
 def issue_token(
     form: OAuth2PasswordRequestForm = Depends(),
-    svc: AuthService = Depends(get_service),
+    svc: AuthService = Depends(get_auth_service),
 ) -> TokenPairResponse:
-    # OAuth2PasswordRequestForm uses 'username' for the principal; we use email as the principal
-    req = LoginRequest(email=form.username, password=form.password)
-    return svc.login(req)
+    # OAuth2PasswordRequestForm uses 'username' for the principal; we use email
+    return svc.login(LoginRequest(email=form.username, password=form.password))
 
 
 @router.post("/refresh", response_model=TokenPairResponse, status_code=status.HTTP_200_OK)
-def refresh(req: RefreshRequest, svc: AuthService = Depends(get_service)) -> TokenPairResponse:
+def refresh(
+    req: RefreshRequest,
+    svc: AuthService = Depends(get_auth_service),
+) -> TokenPairResponse:
     return svc.refresh(req)
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 def logout(
     current_user_id: str = Depends(get_current_user_id),
-    svc: AuthService = Depends(get_service),
+    svc: AuthService = Depends(get_auth_service),
 ) -> None:
     svc.logout(current_user_id)
 
@@ -62,7 +58,7 @@ def logout(
 @router.get("/me", response_model=MeResponse)
 def me(
     current_user_id: str = Depends(get_current_user_id),
-    svc: AuthService = Depends(get_service),
+    svc: AuthService = Depends(get_auth_service),
 ) -> MeResponse:
     return svc.me(current_user_id)
 
@@ -80,6 +76,6 @@ def me(
 def update_me(
     req: UpdateMeRequest,
     current_user_id: str = Depends(get_current_user_id),
-    svc: AuthService = Depends(get_service),
+    svc: AuthService = Depends(get_auth_service),
 ) -> MeResponse:
     return svc.update_me(current_user_id, req)

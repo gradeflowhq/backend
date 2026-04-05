@@ -9,6 +9,8 @@ from gradeflow_engine.serializations.question_set import QuestionSetSerializerCo
 from gradeflow_engine.submissions.models import RawSubmission, Submission
 from pydantic import BaseModel, Field
 
+from gradeflow_backend.schemas.status import SectionStatus
+
 
 class SetQuestionSetByModelRequest(BaseModel):
     question_set: QuestionSet
@@ -26,6 +28,7 @@ class ImportQuestionSetRequest(BaseModel):
 
 class QuestionSetResponse(BaseModel):
     question_set: QuestionSet
+    status: SectionStatus
 
 
 class InferQuestionSetRequest(BaseModel):

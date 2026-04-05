@@ -32,14 +32,23 @@ class Assessment(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+    source_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    question_set_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    rubric_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    results_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
-    # Association object links
     user_links: Mapped[list["UserAssessment"]] = relationship(
         "UserAssessment",
         back_populates="assessment",
         cascade="all, delete-orphan",
         lazy="selectin",
     )
-
-    # Association proxy to users (collection proxy, not a mapped column)
     users: AssociationProxy[list["User"]] = association_proxy("user_links", "user")

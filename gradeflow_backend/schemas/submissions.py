@@ -1,14 +1,12 @@
+from datetime import datetime
+
 from gradeflow_engine.submissions.models import RawSubmission
 from pydantic import BaseModel, Field
 
 
 class UploadSourceDataRequest(BaseModel):
-    data: str = Field(
-        ..., description="Processed CSV text (rows trimmed, student IDs optionally encrypted)"
-    )
-    student_id_column: str = Field(
-        ..., description="Name of the student ID column in the uploaded CSV"
-    )
+    data: str = Field(..., description="Processed CSV text")
+    student_id_column: str = Field(..., description="Name of the student ID column")
 
 
 class SourceDataResponse(BaseModel):
@@ -25,3 +23,4 @@ class SubmissionsImportConfig(BaseModel):
 
 class SubmissionsResponse(BaseModel):
     raw_submissions: list[RawSubmission]
+    updated_at: datetime | None = None

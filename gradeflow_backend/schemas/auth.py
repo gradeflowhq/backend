@@ -26,3 +26,10 @@ class MeResponse(BaseModel):
     id: str
     email: EmailStr
     name: str | None = None
+
+
+class UpdateMeRequest(BaseModel):
+    name: str | None = Field(default=None, max_length=255)
+    email: EmailStr | None = Field(default=None)
+    current_password: str | None = Field(default=None)
+    new_password: str | None = Field(default=None, min_length=12, max_length=128)

@@ -11,6 +11,7 @@ from gradeflow_backend.schemas.auth import (
     RefreshRequest,
     SignupRequest,
     TokenPairResponse,
+    UpdateMeRequest,
 )
 from gradeflow_backend.security.jwt import (
     JwtError,
@@ -113,4 +114,43 @@ class AuthService:
             u = self.users.get(user_id)
         except NoResultFound as e:
             raise NotFoundError("User not found") from e
+        return MeResponse(id=u.id, email=u.email, name=u.name)
+
+    def update_me(self, user_id: str, req: UpdateMeRequest) -> MeResponse:
+        try:
+            u = self.users.get(user_id)
+        except NoResultFound as e:
+            raise NotFoundError("User not found") from e
+
+        # Sensitive changes (email or password) require current_password verification
+        changing_sensitive = req.email is not None or req.new_password is not None
+        if changing_sensitive:
+            if not req.current_password:
+                raise BadRequestError("current_password is required to change email or password")
+            if not verify_password(req.current_password, u.password_hash):
+                raise BadRequestError("current_password is incorrect")
+
+        # Resolve fields to update
+        new_email: str | None = None
+        if req.email is not None:
+            normalised = req.email.strip().lower()
+            if normalised != u.email.lower():
+                existing = self.users.get_by_email(normalised)
+                if existing is not None and existing.id != user_id:
+                    raise BadRequestError("Email already in use")
+                new_email = normalised
+
+        new_password_hash: str | None = None
+        if req.new_password is not None:
+            new_password_hash = hash_password(req.new_password)
+
+        # name=None means "not provided / no change"; empty string is a valid name
+        new_name: str | None = req.name  # passed through as-is; None -> no-op in repo
+
+        u = self.users.update(
+            user_id,
+            email=new_email,
+            name=new_name,
+            password_hash=new_password_hash,
+        )
         return MeResponse(id=u.id, email=u.email, name=u.name)

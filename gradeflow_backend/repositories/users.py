@@ -25,6 +25,28 @@ class UserRepository(BaseRepository):
         self.session().flush()
         return u
 
+    def update(
+        self,
+        id: str,
+        *,
+        email: str | None = None,
+        name: str | None = None,
+        password_hash: str | None = None,
+    ) -> User:
+        """
+        Partially update a user. Only non-None fields are applied.
+        Raises NoResultFound if the user does not exist.
+        """
+        u = self.get(id)
+        if email is not None:
+            u.email = email
+        if name is not None:
+            u.name = name
+        if password_hash is not None:
+            u.password_hash = password_hash
+        self.session().flush()
+        return u
+
     def get(self, id: str) -> User:
         """
         Get a user by ID or raise NoResultFound.

@@ -12,6 +12,7 @@ from gradeflow_backend.schemas.auth import (
     RefreshRequest,
     SignupRequest,
     TokenPairResponse,
+    UpdateMeRequest,
 )
 from gradeflow_backend.services.auth import AuthService
 
@@ -64,3 +65,21 @@ def me(
     svc: AuthService = Depends(get_service),
 ) -> MeResponse:
     return svc.me(current_user_id)
+
+
+@router.patch(
+    "/me",
+    response_model=MeResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Update current user profile",
+    description=(
+        "Update name, email, and/or password for the authenticated user. "
+        "Changing email or password requires current_password to be supplied."
+    ),
+)
+def update_me(
+    req: UpdateMeRequest,
+    current_user_id: str = Depends(get_current_user_id),
+    svc: AuthService = Depends(get_service),
+) -> MeResponse:
+    return svc.update_me(current_user_id, req)

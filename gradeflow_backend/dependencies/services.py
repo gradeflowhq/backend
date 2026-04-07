@@ -32,7 +32,11 @@ def get_auth_service(db: Session = Depends(get_session)) -> AuthService:
 
 
 def get_assessment_service(db: Session = Depends(get_session)) -> AssessmentService:
-    return AssessmentService(AssessmentRepository(db), MembershipRepository(db))
+    return AssessmentService(
+        AssessmentRepository(db),
+        MembershipRepository(db),
+        SubmissionRepository(db),
+    )
 
 
 def get_submissions_service(db: Session = Depends(get_session)) -> SubmissionsService:

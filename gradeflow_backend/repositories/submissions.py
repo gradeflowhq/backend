@@ -1,7 +1,7 @@
 import uuid
 
 from gradeflow_engine.submissions.models import Submission
-from sqlalchemy import delete, insert, select
+from sqlalchemy import delete, func, insert, select, tuple_
 from sqlalchemy.orm import Session
 
 from gradeflow_backend.models.submission import SubmissionRecord, SubmissionResult
@@ -70,6 +70,15 @@ class SubmissionRepository(BaseRepository):
         )
         self.session().flush()
 
+    def count_graded_by_assessment(self, assessment_id: str) -> int:
+        """Return the number of graded student records for an assessment."""
+        stmt = (
+            select(func.count())
+            .select_from(SubmissionRecord)
+            .where(SubmissionRecord.assessment_id == assessment_id)
+        )
+        return self.session().execute(stmt).scalar_one()
+
     def update_result(
         self,
         result: SubmissionResult,
@@ -95,6 +104,30 @@ class SubmissionRepository(BaseRepository):
             )
         )
         return self.session().execute(stmt).scalar_one_or_none()
+
+    def bulk_get_results(
+        self,
+        assessment_id: str,
+        student_question_pairs: list[tuple[str, str]],
+    ) -> dict[tuple[str, str], SubmissionResult]:
+        """Fetch multiple results in a single query.
+
+        Returns a dict keyed by (student_id, question_id).
+        """
+        if not student_question_pairs:
+            return {}
+        stmt = (
+            select(SubmissionResult, SubmissionRecord.student_id)
+            .join(SubmissionRecord, SubmissionResult.submission_id == SubmissionRecord.id)
+            .where(
+                SubmissionRecord.assessment_id == assessment_id,
+                tuple_(SubmissionRecord.student_id, SubmissionResult.question_id).in_(
+                    student_question_pairs
+                ),
+            )
+        )
+        rows = self.session().execute(stmt).all()
+        return {(student_id, result.question_id): result for result, student_id in rows}
 
     @staticmethod
     def to_adjustable_submission(gs: SubmissionRecord) -> AdjustableSubmission:

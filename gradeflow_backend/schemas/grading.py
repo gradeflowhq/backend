@@ -55,6 +55,20 @@ class GradeAdjustmentRequest(BaseModel):
     adjusted_feedback: str | None = Field(default=None, description="New feedback (optional)")
 
 
+class BulkGradeAdjustmentRequest(BaseModel):
+    adjustments: list[GradeAdjustmentRequest] = Field(
+        ..., min_length=1, description="List of grade adjustments to apply in a single request"
+    )
+
+
+class BulkGradeAdjustmentResponse(BaseModel):
+    applied: int = Field(..., description="Number of adjustments successfully applied")
+    errors: list[str] = Field(
+        default_factory=list, description="Error messages for failed adjustments"
+    )
+    result: GradingResponse = Field(..., description="Updated grading results")
+
+
 class GradingLimitConfig(BaseModel):
     limit: int | None = Field(
         default=5,

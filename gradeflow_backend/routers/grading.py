@@ -3,6 +3,8 @@ from fastapi import APIRouter, Depends, Request, status
 from gradeflow_backend.dependencies.memberships import member_guard_factory, role_guard_factory
 from gradeflow_backend.dependencies.services import get_grading_service, get_jobs_service
 from gradeflow_backend.schemas.grading import (
+    BulkGradeAdjustmentRequest,
+    BulkGradeAdjustmentResponse,
     GradeAdjustmentRequest,
     GradingDownloadRequest,
     GradingDownloadResponse,
@@ -56,6 +58,20 @@ def adjust_grading(
     _u: str = Depends(role_guard_factory("editor")),
 ) -> GradingResponse:
     return svc.adjust(assessment_id, req)
+
+
+@router.post(
+    "/bulk-adjust",
+    response_model=BulkGradeAdjustmentResponse,
+    status_code=status.HTTP_200_OK,
+)
+def bulk_adjust_grading(
+    assessment_id: str,
+    req: BulkGradeAdjustmentRequest,
+    svc: GradingService = Depends(get_grading_service),
+    _u: str = Depends(role_guard_factory("editor")),
+) -> BulkGradeAdjustmentResponse:
+    return svc.bulk_adjust(assessment_id, req)
 
 
 @router.post("/download", response_model=GradingDownloadResponse, status_code=status.HTTP_200_OK)

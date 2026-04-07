@@ -12,11 +12,14 @@ from gradeflow_engine.rules.result import QuestionResult
 from gradeflow_engine.submissions.models import RawSubmission, Submission
 
 from gradeflow_backend.models.assessment import Assessment
+from gradeflow_backend.models.submission import SubmissionResult
 from gradeflow_backend.repositories.assessments import AssessmentRepository
 from gradeflow_backend.repositories.grading_jobs import GradingJobRepository
 from gradeflow_backend.repositories.submissions import SubmissionRepository
 from gradeflow_backend.schemas.grading import (
     AdjustableSubmission,
+    BulkGradeAdjustmentRequest,
+    BulkGradeAdjustmentResponse,
     GradeAdjustmentRequest,
     GradingDownloadRequest,
     GradingDownloadResponse,
@@ -163,6 +166,18 @@ class GradingService(BaseService):
         self._get_or_404(assessment_id)
         self.submission_repo.delete_by_assessment(assessment_id)
 
+    @staticmethod
+    def _validate_adjustment_points(
+        adjusted_points: float | None, max_points: float, student_id: str, question_id: str
+    ) -> str | None:
+        """Return an error string if the adjustment is invalid, else None."""
+        if adjusted_points is not None and adjusted_points > max_points:
+            return (
+                f"adjusted_points ({adjusted_points}) exceeds max_points ({max_points}) "
+                f"for student_id={student_id}, question_id={question_id}"
+            )
+        return None
+
     def adjust(self, assessment_id: str, adj: GradeAdjustmentRequest) -> GradingResponse:
         a = self._get_or_404(assessment_id)
         result = self.submission_repo.get_result(assessment_id, adj.student_id, adj.question_id)
@@ -170,12 +185,55 @@ class GradingService(BaseService):
             raise BadRequestError(
                 f"No result found: student_id={adj.student_id}, question_id={adj.question_id}"
             )
-        if adj.adjusted_points is not None and adj.adjusted_points > result.max_points:
-            raise BadRequestError(
-                f"adjusted_points ({adj.adjusted_points}) exceeds max_points ({result.max_points})"
-            )
+        err = self._validate_adjustment_points(
+            adj.adjusted_points, result.max_points, adj.student_id, adj.question_id
+        )
+        if err:
+            raise BadRequestError(err)
         self.submission_repo.update_result(result, adj.adjusted_points, adj.adjusted_feedback)
         return self._grading_response(a)
+
+    def bulk_adjust(
+        self, assessment_id: str, req: BulkGradeAdjustmentRequest
+    ) -> BulkGradeAdjustmentResponse:
+        a = self._get_or_404(assessment_id)
+        errors: list[str] = []
+
+        # Fetch all required results in a single query.
+        pairs = [(adj.student_id, adj.question_id) for adj in req.adjustments]
+        result_map = self.submission_repo.bulk_get_results(assessment_id, pairs)
+
+        # Validate and stage adjustments in memory.
+        updates: list[tuple[SubmissionResult, float | None, str | None]] = []
+        for adj in req.adjustments:
+            key = (adj.student_id, adj.question_id)
+            result = result_map.get(key)
+            if result is None:
+                errors.append(
+                    f"No result: student_id={adj.student_id}, question_id={adj.question_id}"
+                )
+                continue
+            err = self._validate_adjustment_points(
+                adj.adjusted_points, result.max_points, adj.student_id, adj.question_id
+            )
+            if err:
+                errors.append(err)
+                continue
+            updates.append((result, adj.adjusted_points, adj.adjusted_feedback))
+
+        # Apply all valid adjustments and flush once.
+        for result, adjusted_points, adjusted_feedback in updates:
+            result.adjusted_points = adjusted_points
+            result.adjusted_feedback = adjusted_feedback
+            result.graded = True
+        if updates:
+            self.submission_repo.session().flush()
+
+        return BulkGradeAdjustmentResponse(
+            applied=len(updates),
+            errors=errors,
+            result=self._grading_response(a),
+        )
 
     def download(self, assessment_id: str, req: GradingDownloadRequest) -> GradingDownloadResponse:
         a = self._get_or_404(assessment_id)

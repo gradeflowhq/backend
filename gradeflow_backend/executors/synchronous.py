@@ -1,5 +1,6 @@
 import logging
 import time
+import uuid
 
 import httpx
 
@@ -14,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 class SynchronousJobExecutor(GradingJobExecutor):
     def submit(self, spec: GradingJobSpec, callback_url: str) -> str:
-        job_id = f"job_{int(time.time() * 1000)}_{spec.type}"
+        job_id = f"job-{uuid.uuid4().hex}-{spec.type}"
         logger.info(
             "Running synchronous job",
             extra={"job_id": job_id, "assessment_id": spec.assessment_id, "type": spec.type},
@@ -39,6 +40,7 @@ class SynchronousJobExecutor(GradingJobExecutor):
                 assessment_id=spec.assessment_id,
                 type=spec.type,
                 submissions=submissions,
+                remove_adjustments=spec.remove_adjustments,
             )
 
             # Post callback

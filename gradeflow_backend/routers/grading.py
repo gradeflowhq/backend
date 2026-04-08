@@ -38,6 +38,16 @@ def get_grading_job(
     return svc.get_job(assessment_id, "run", request)
 
 
+@router.delete("/job", status_code=status.HTTP_204_NO_CONTENT)
+def cancel_grading_job(
+    assessment_id: str,
+    svc: GradingService = Depends(get_grading_service),
+    jobs: JobsService = Depends(get_jobs_service),
+    _u: str = Depends(role_guard_factory("editor")),
+) -> None:
+    svc.cancel_job(assessment_id, "run", jobs)
+
+
 @router.post("", response_model=GradingJob, status_code=status.HTTP_200_OK)
 def run_grading(
     assessment_id: str,
@@ -47,7 +57,7 @@ def run_grading(
     jobs: JobsService = Depends(get_jobs_service),
     _u: str = Depends(role_guard_factory("editor")),
 ) -> GradingJob:
-    return svc.run(assessment_id, request, jobs)
+    return svc.run(assessment_id, req, request, jobs)
 
 
 @router.post("/adjust", response_model=GradingResponse, status_code=status.HTTP_200_OK)
@@ -122,3 +132,13 @@ def get_grading_preview_job(
     _u: str = Depends(member_guard_factory()),
 ) -> GradingJob:
     return svc.get_job(assessment_id, "preview", request)
+
+
+@router.delete("/preview/job", status_code=status.HTTP_204_NO_CONTENT)
+def cancel_grading_preview_job(
+    assessment_id: str,
+    svc: GradingService = Depends(get_grading_service),
+    jobs: JobsService = Depends(get_jobs_service),
+    _u: str = Depends(member_guard_factory()),
+) -> None:
+    svc.cancel_job(assessment_id, "preview", jobs)

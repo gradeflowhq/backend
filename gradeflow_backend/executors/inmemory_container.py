@@ -74,9 +74,10 @@ class InMemoryContainerJobExecutor(InMemoryBaseJobExecutor):
         assessment_id: str,
         job_type: str,
         point_columns_json: str = "{}",
+        remove_adjustments: bool = False,
     ) -> None:
         """
-        Invoke the shared entrypoint inside a container, injecting GF_* env vars.
+        Invoke the shared entrypoint inside a container, injecting GRADEFLOW_* env vars.
         """
         s = get_settings().executor
         engine_bin = s.engine_command  # e.g., "gradeflow-engine"
@@ -91,29 +92,31 @@ class InMemoryContainerJobExecutor(InMemoryBaseJobExecutor):
         # Inject environment via -e flags
         env_flags = [
             "-e",
-            f"GF_ASSESSMENT_ID={assessment_id}",
+            f"GRADEFLOW_ASSESSMENT_ID={assessment_id}",
             "-e",
-            f"GF_JOB_TYPE={job_type}",
+            f"GRADEFLOW_JOB_TYPE={job_type}",
             "-e",
-            f"GF_WORKDIR={self._container_workdir}",
+            f"GRADEFLOW_WORKDIR={self._container_workdir}",
             "-e",
-            f"GF_CALLBACK_URL={callback_url}",
+            f"GRADEFLOW_CALLBACK_URL={callback_url}",
             "-e",
-            f"GF_TIMEOUT_S={self._timeout_s}",
+            f"GRADEFLOW_TIMEOUT_S={self._timeout_s}",
             "-e",
-            f"GF_CALLBACK_TIMEOUT_S={self._callback_timeout_s}",
+            f"GRADEFLOW_CALLBACK_TIMEOUT_S={self._callback_timeout_s}",
             "-e",
-            f"GF_ENGINE_BIN={engine_bin}",
+            f"GRADEFLOW_ENGINE_BIN={engine_bin}",
             "-e",
-            f"GF_SUBMISSIONS_PATH={self._container_workdir}/submissions.csv",
+            f"GRADEFLOW_SUBMISSIONS_PATH={self._container_workdir}/submissions.csv",
             "-e",
-            f"GF_QSET_PATH={self._container_workdir}/question_set.yaml",
+            f"GRADEFLOW_QSET_PATH={self._container_workdir}/question_set.yaml",
             "-e",
-            f"GF_RUBRIC_PATH={self._container_workdir}/rubric.yaml",
+            f"GRADEFLOW_RUBRIC_PATH={self._container_workdir}/rubric.yaml",
             "-e",
-            f"GF_OUT_PATH={self._container_workdir}/graded.yaml",
+            f"GRADEFLOW_OUT_PATH={self._container_workdir}/graded.yaml",
             "-e",
-            f"GF_POINT_COLUMNS_JSON={point_columns_json}",
+            f"GRADEFLOW_POINT_COLUMNS_JSON={point_columns_json}",
+            "-e",
+            f"GRADEFLOW_REMOVE_ADJUSTMENTS={str(remove_adjustments).lower()}",
         ]
         # Insert env flags after 'run'
         try:

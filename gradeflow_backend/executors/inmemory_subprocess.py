@@ -26,9 +26,10 @@ class InMemorySubprocessJobExecutor(InMemoryBaseJobExecutor):
         assessment_id: str,
         job_type: str,
         point_columns_json: str = "{}",
+        remove_adjustments: bool = False,
     ) -> None:
         """
-        Invoke the shared entrypoint in a local Python subprocess, passing GF_* env vars.
+        Invoke the shared entrypoint in a local Python subprocess, passing GRADEFLOW_* env vars.
         """
         s = get_settings().executor
         engine_bin = s.engine_command
@@ -36,20 +37,21 @@ class InMemorySubprocessJobExecutor(InMemoryBaseJobExecutor):
         env = {
             **os.environ,
             # identity and callback
-            "GF_ASSESSMENT_ID": assessment_id,
-            "GF_JOB_TYPE": job_type,
-            "GF_CALLBACK_URL": callback_url,
+            "GRADEFLOW_ASSESSMENT_ID": assessment_id,
+            "GRADEFLOW_JOB_TYPE": job_type,
+            "GRADEFLOW_CALLBACK_URL": callback_url,
             # execution and timeouts
-            "GF_WORKDIR": str(workdir),
-            "GF_TIMEOUT_S": str(self._timeout_s),
-            "GF_CALLBACK_TIMEOUT_S": str(self._callback_timeout_s),
+            "GRADEFLOW_WORKDIR": str(workdir),
+            "GRADEFLOW_TIMEOUT_S": str(self._timeout_s),
+            "GRADEFLOW_CALLBACK_TIMEOUT_S": str(self._callback_timeout_s),
             # explicit paths to avoid drift
-            "GF_ENGINE_BIN": engine_bin,
-            "GF_SUBMISSIONS_PATH": str(submissions_csv),
-            "GF_QSET_PATH": str(qset_yaml),
-            "GF_RUBRIC_PATH": str(rubric_yaml),
-            "GF_OUT_PATH": str(out_path),
-            "GF_POINT_COLUMNS_JSON": point_columns_json,
+            "GRADEFLOW_ENGINE_BIN": engine_bin,
+            "GRADEFLOW_SUBMISSIONS_PATH": str(submissions_csv),
+            "GRADEFLOW_QSET_PATH": str(qset_yaml),
+            "GRADEFLOW_RUBRIC_PATH": str(rubric_yaml),
+            "GRADEFLOW_OUT_PATH": str(out_path),
+            "GRADEFLOW_POINT_COLUMNS_JSON": point_columns_json,
+            "GRADEFLOW_REMOVE_ADJUSTMENTS": str(remove_adjustments).lower(),
         }
 
         logger.info(

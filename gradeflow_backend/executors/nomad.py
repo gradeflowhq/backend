@@ -1,4 +1,3 @@
-import importlib.resources as ir
 import json
 import logging
 import uuid
@@ -10,6 +9,7 @@ from nomad import Nomad
 from gradeflow_backend.config import get_settings
 from gradeflow_backend.executors.base import GradingJobExecutor
 from gradeflow_backend.executors.exceptions import JobNotFoundError
+from gradeflow_backend.executors.inmemory_base import _load_entrypoint_source
 from gradeflow_backend.executors.registry import register
 from gradeflow_backend.schemas.grading import GradingJobSpec, JobStatus
 from gradeflow_backend.utils.renderers import (
@@ -44,11 +44,6 @@ DEFAULT_SCRIPT_PERMS = "0755"
 DEFAULT_DOCKER_DRIVER = "docker"
 
 
-def _load_entrypoint_source() -> str:
-    entry = ir.files("gradeflow_backend.executors").joinpath("entrypoint.py")
-    return entry.read_text(encoding="utf-8")
-
-
 def _select_priority(job_type: str) -> int:
     normalized = job_type.strip().lower()
     if normalized in {"preview", "dry-run", "validate"}:
@@ -74,18 +69,19 @@ def _build_nomad_job(
     priority = _select_priority(spec.type)
 
     env: dict[str, str] = {
-        "GF_ASSESSMENT_ID": spec.assessment_id,
-        "GF_JOB_TYPE": spec.type,
-        "GF_CALLBACK_URL": callback_url,
-        "GF_ENGINE_BIN": DEFAULT_ENGINE_BIN,
-        "GF_WORKDIR": workdir,
-        "GF_SUBMISSIONS_PATH": f"{workdir}/submissions.csv",
-        "GF_QSET_PATH": f"{workdir}/question_set.yaml",
-        "GF_RUBRIC_PATH": f"{workdir}/rubric.yaml",
-        "GF_OUT_PATH": f"{workdir}/graded.yaml",
-        "GF_TIMEOUT_S": str(s.timeout_s),
-        "GF_CALLBACK_TIMEOUT_S": str(s.callback_timeout_s),
-        "GF_POINT_COLUMNS_JSON": point_columns_json,
+        "GRADEFLOW_ASSESSMENT_ID": spec.assessment_id,
+        "GRADEFLOW_JOB_TYPE": spec.type,
+        "GRADEFLOW_CALLBACK_URL": callback_url,
+        "GRADEFLOW_ENGINE_BIN": DEFAULT_ENGINE_BIN,
+        "GRADEFLOW_WORKDIR": workdir,
+        "GRADEFLOW_SUBMISSIONS_PATH": f"{workdir}/submissions.csv",
+        "GRADEFLOW_QSET_PATH": f"{workdir}/question_set.yaml",
+        "GRADEFLOW_RUBRIC_PATH": f"{workdir}/rubric.yaml",
+        "GRADEFLOW_OUT_PATH": f"{workdir}/graded.yaml",
+        "GRADEFLOW_TIMEOUT_S": str(s.timeout_s),
+        "GRADEFLOW_CALLBACK_TIMEOUT_S": str(s.callback_timeout_s),
+        "GRADEFLOW_POINT_COLUMNS_JSON": point_columns_json,
+        "GRADEFLOW_REMOVE_ADJUSTMENTS": str(spec.remove_adjustments).lower(),
     }
 
     templates: list[dict[str, str]] = [
@@ -190,7 +186,12 @@ class NomadJobExecutor(GradingJobExecutor):
             logger.error("Nomad job not found", extra={"job_id": job_id})
             raise JobNotFoundError(f"Job not found: {job_id}") from e
         status = cast(str, job["Status"])
-        assert status in {"pending", "running", "dead"}, f"Unknown Nomad job status: {status}"
+        if status not in {"pending", "running", "dead"}:
+            logger.warning(
+                "Unexpected Nomad job status",
+                extra={"job_id": job_id, "status": status},
+            )
+            return "failed"
         if status == "pending":
             return "queued"
         elif status == "running":
@@ -200,6 +201,9 @@ class NomadJobExecutor(GradingJobExecutor):
             list[dict[str, Any]],
             self._nomad.job.get_allocations(job_id, namespace=self._namespace),
         )
+        if not allocations:
+            logger.warning("Nomad job dead with no allocations", extra={"job_id": job_id})
+            return "failed"
         completed: bool = all(alloc["ClientStatus"] == "complete" for alloc in allocations)
         if completed:
             return "completed"
@@ -207,6 +211,19 @@ class NomadJobExecutor(GradingJobExecutor):
 
     def start(self) -> None:
         pass
+
+    def cancel(self, job_id: str) -> None:
+        try:
+            jobs_api: Any = self._nomad.jobs
+            if self._namespace:
+                jobs_api.deregister_job(job_id, namespace=self._namespace)
+            else:
+                jobs_api.deregister_job(job_id)
+            logger.info("Cancelled Nomad job", extra={"job_id": job_id})
+        except nomad.api.exceptions.URLNotFoundNomadException as e:
+            from gradeflow_backend.executors.exceptions import JobNotFoundError
+
+            raise JobNotFoundError(f"Job not found: {job_id}") from e
 
     def stop(self) -> None:
         pass

@@ -29,7 +29,10 @@ class AdjustableSubmission(Submission):
 
 
 class GradingRunRequest(BaseModel):
-    pass
+    remove_adjustments: bool = Field(
+        default=False,
+        description="When True, clear all manual adjustments on re-graded submissions.",
+    )
 
 
 class GradingResponse(BaseModel):
@@ -112,12 +115,20 @@ class GradingJobSpec(BaseModel):
     raw_submissions: list[RawSubmission] = Field(..., min_length=1)
     question_set: QuestionSet
     rubric: Rubric
+    remove_adjustments: bool = Field(
+        default=False,
+        description="When True, clear all manual adjustments on re-graded submissions.",
+    )
 
 
 class GradingJobResult(BaseModel):
     assessment_id: str
     type: JobType
     submissions: list[Submission]
+    remove_adjustments: bool = Field(
+        default=False,
+        description="When True, clear all manual adjustments on re-graded submissions.",
+    )
 
 
 class GradingJob(BaseModel):

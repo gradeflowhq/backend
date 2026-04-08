@@ -28,6 +28,7 @@ from gradeflow_backend.schemas.grading import (
     GradingLimitConfig,
     GradingPreviewRequest,
     GradingResponse,
+    GradingRunRequest,
     JobType,
 )
 from gradeflow_backend.services.base import BaseService
@@ -97,6 +98,7 @@ class GradingService(BaseService):
         jobs: JobsService,
         rule: QuestionRule | None = None,
         config: GradingLimitConfig | None = None,
+        remove_adjustments: bool = False,
     ) -> GradingJob:
         a = self._get_or_404(assessment_id)
         qset = load_question_set(a)
@@ -125,6 +127,7 @@ class GradingService(BaseService):
                 raw_submissions=raw_subs,
                 question_set=qset,
                 rubric=rubric,
+                remove_adjustments=remove_adjustments,
             ),
             request,
         )
@@ -132,10 +135,17 @@ class GradingService(BaseService):
     def run(
         self,
         assessment_id: str,
+        req: GradingRunRequest,
         request: Request,
         jobs: JobsService,
     ) -> GradingJob:
-        return self._run(assessment_id, type="run", request=request, jobs=jobs)
+        return self._run(
+            assessment_id,
+            type="run",
+            request=request,
+            jobs=jobs,
+            remove_adjustments=req.remove_adjustments,
+        )
 
     def run_preview(
         self,
@@ -161,6 +171,12 @@ class GradingService(BaseService):
         if not job_id:
             raise NotFoundError("No job found for this assessment")
         return build_grading_job(request, job_id)
+
+    def cancel_job(self, assessment_id: str, type: JobType, jobs: JobsService) -> None:
+        job_id = self.grading_jobs.get_job_id(assessment_id, type)
+        if not job_id:
+            raise NotFoundError("No job found for this assessment")
+        jobs.cancel_job(job_id)
 
     def delete(self, assessment_id: str) -> None:
         self._get_or_404(assessment_id)

@@ -35,7 +35,11 @@ class JobsService:
             yaml_str = yaml.safe_dump(payload)
             self.assessments.set_preview_yaml(assessment_id, yaml_str)
         elif type == "run":
-            self.submissions.bulk_replace(assessment_id, result.submissions)
+            self.submissions.bulk_upsert(
+                assessment_id,
+                result.submissions,
+                remove_adjustments=result.remove_adjustments,
+            )
             self.assessments.stamp_results_updated_at(result.assessment_id)
         else:
             raise BadRequestError("Unknown job type")
@@ -72,6 +76,13 @@ class JobsService:
     def get_status(self, job_id: str) -> JobStatusResponse:
         try:
             return JobStatusResponse(job_id=job_id, status=self.executor.get_status(job_id))
+        except JobNotFoundError as e:
+            raise NotFoundError("Job not found") from e
+
+    def cancel_job(self, job_id: str) -> None:
+        """Cancel a running or queued job by job_id."""
+        try:
+            self.executor.cancel(job_id)
         except JobNotFoundError as e:
             raise NotFoundError("Job not found") from e
 

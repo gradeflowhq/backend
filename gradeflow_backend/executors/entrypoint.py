@@ -15,7 +15,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Config(BaseSettings):
     model_config = SettingsConfigDict(
-        env_prefix="GF_",
+        env_prefix="GRADEFLOW_",
         case_sensitive=False,
     )
 
@@ -40,6 +40,9 @@ class Config(BaseSettings):
     point_columns_json: str = Field(
         default="{}", description="JSON-encoded {qid: col} passthrough point column mapping"
     )
+    remove_adjustments: bool = Field(
+        default=False, description="When True, clear manual adjustments on re-graded submissions"
+    )
 
     def resolved_submissions(self) -> Path:
         return self.submissions_path or (self.workdir / "submissions.csv")
@@ -58,6 +61,7 @@ class Payload(BaseModel):
     assessment_id: str
     type: str
     submissions: list[Submission]
+    remove_adjustments: bool = False
 
 
 def _run_engine_cli(
@@ -142,6 +146,7 @@ def main() -> int:
         assessment_id=cfg.assessment_id,
         type=cfg.job_type,
         submissions=items,
+        remove_adjustments=cfg.remove_adjustments,
     )
 
     try:

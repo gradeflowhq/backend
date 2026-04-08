@@ -3,12 +3,13 @@ import json
 import logging
 import tempfile
 import threading
-import time
+import uuid
 from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
 
 from gradeflow_backend.executors.base import GradingJobExecutor
+from gradeflow_backend.executors.exceptions import JobNotFoundError
 from gradeflow_backend.schemas.grading import GradingJobSpec, JobStatus
 from gradeflow_backend.utils.renderers import (
     render_point_columns_map,
@@ -23,6 +24,12 @@ DEFAULT_POLL_INTERVAL_S = 1
 DEFAULT_NUM_WORKERS = 4
 
 logger = logging.getLogger(__name__)
+
+
+def _load_entrypoint_source() -> str:
+    """Load the shared entrypoint.py source from package data."""
+    entry = ir.files("gradeflow_backend.executors").joinpath("entrypoint.py")
+    return entry.read_text(encoding="utf-8")
 
 
 @dataclass(frozen=True)
@@ -65,6 +72,9 @@ class InMemoryBaseJobExecutor(GradingJobExecutor):
         # Shared status map
         self._status: dict[str, JobStatus] = {}
 
+        # Track cancelled job IDs
+        self._cancelled: set[str] = set()
+
         # Concurrency primitives
         self._lock = threading.Lock()
         self._stop_event = threading.Event()
@@ -78,7 +88,7 @@ class InMemoryBaseJobExecutor(GradingJobExecutor):
 
     def submit(self, spec: GradingJobSpec, callback_url: str) -> str:
         self.start()
-        job_id = f"job_{int(time.time() * 1000)}_{spec.type}"
+        job_id = f"job-{uuid.uuid4().hex}-{spec.type}"
         job = _Job(id=job_id, spec=spec, callback_url=callback_url)
         with self._lock:
             self._status[job_id] = "queued"
@@ -91,7 +101,22 @@ class InMemoryBaseJobExecutor(GradingJobExecutor):
 
     def get_status(self, job_id: str) -> JobStatus:
         with self._lock:
+            if job_id not in self._status:
+                raise JobNotFoundError(f"Job not found: {job_id}")
             return self._status.get(job_id, "failed")
+
+    def cancel(self, job_id: str) -> None:
+        with self._lock:
+            if job_id not in self._status:
+                raise JobNotFoundError(f"Job not found: {job_id}")
+            status = self._status[job_id]
+            if status in ("completed", "failed"):
+                return
+            self._cancelled.add(job_id)
+            self._status[job_id] = "failed"
+            # Remove from preview queue if queued
+            self._jobs_preview = deque(j for j in self._jobs_preview if j.id != job_id)
+            self._jobs_run = deque(j for j in self._jobs_run if j.id != job_id)
 
     def start(self) -> None:
         if self._started:
@@ -138,13 +163,6 @@ class InMemoryBaseJobExecutor(GradingJobExecutor):
                     return
             self._process_job(job)
 
-    def _load_entrypoint_source(self) -> str:
-        """
-        Load the shared entrypoint.py source from package data to inject into workdir.
-        """
-        entry = ir.files("gradeflow_backend.executors").joinpath("entrypoint.py")
-        return entry.read_text(encoding="utf-8")
-
     def _stage_inputs(
         self,
         *,
@@ -164,18 +182,21 @@ class InMemoryBaseJobExecutor(GradingJobExecutor):
         submissions_csv.write_text(render_submissions_csv(spec), encoding="utf-8", newline="")
         qset_yaml.write_text(render_question_set_yaml(spec), encoding="utf-8")
         rubric_yaml.write_text(render_rubric_yaml_minimal(spec), encoding="utf-8")
-        entrypoint_py.write_text(self._load_entrypoint_source(), encoding="utf-8")
+        entrypoint_py.write_text(_load_entrypoint_source(), encoding="utf-8")
         entrypoint_py.chmod(0o755)
 
         return submissions_csv, qset_yaml, rubric_yaml, entrypoint_py, out_yaml
 
     def _process_job(self, job: _Job) -> None:
         with self._lock:
+            if job.id in self._cancelled:
+                return
             self._set_status(job.id, "running")
         try:
             self._execute(job)
             with self._lock:
-                self._set_status(job.id, "completed")
+                if job.id not in self._cancelled:
+                    self._set_status(job.id, "completed")
         except Exception:
             with self._lock:
                 self._set_status(job.id, "failed")
@@ -205,6 +226,7 @@ class InMemoryBaseJobExecutor(GradingJobExecutor):
                 assessment_id=spec.assessment_id,
                 job_type=spec.type,
                 point_columns_json=json.dumps(render_point_columns_map(spec)),
+                remove_adjustments=spec.remove_adjustments,
             )
 
     # ------- Abstract hook to implement in subclasses -------
@@ -222,9 +244,10 @@ class InMemoryBaseJobExecutor(GradingJobExecutor):
         assessment_id: str,
         job_type: str,  # "run" | "preview"
         point_columns_json: str = "{}",
+        remove_adjustments: bool = False,
     ) -> None:
         """
         Subclasses must implement this to run the shared entrypoint and produce out_path.
-        Should raise on failure. Must honor self._timeout_s. Must pass GF_* envs.
+        Should raise on failure. Must honor self._timeout_s. Must pass GRADEFLOW_* envs.
         """
         raise NotImplementedError

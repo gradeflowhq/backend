@@ -47,3 +47,16 @@ def test_question_set_import_examplify_adapter(api: ApiClient) -> None:
     assert "Q1" in qset.question_map
     q1 = qset.question_map["Q1"]
     assert getattr(q1, "type", None) == "CHOICE"
+
+
+def test_question_set_status_clears_after_resave(api: ApiClient) -> None:
+    created = api.create_assessment("Question Set Status Refresh")
+
+    api.set_question_set_yaml(created.id, QUESTION_SET_YAML)
+    api.set_submissions_csv(created.id, SUBMISSIONS_CSV)
+
+    stale = api.get_question_set(created.id)
+    assert stale.status.is_stale is True
+
+    refreshed = api.set_question_set_yaml(created.id, QUESTION_SET_YAML)
+    assert refreshed.status.is_stale is False

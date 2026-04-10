@@ -8,7 +8,7 @@ from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
 
-from gradeflow_backend.executors.base import GradingJobExecutor
+from gradeflow_backend.executors.base import GradingJobExecutor, format_job_error
 from gradeflow_backend.executors.exceptions import JobNotFoundError
 from gradeflow_backend.schemas.grading import GradingJobSpec, JobStatus
 from gradeflow_backend.utils.renderers import (
@@ -71,6 +71,7 @@ class InMemoryBaseJobExecutor(GradingJobExecutor):
 
         # Shared status map
         self._status: dict[str, JobStatus] = {}
+        self._errors: dict[str, str | None] = {}
 
         # Track cancelled job IDs
         self._cancelled: set[str] = set()
@@ -92,6 +93,7 @@ class InMemoryBaseJobExecutor(GradingJobExecutor):
         job = _Job(id=job_id, spec=spec, callback_url=callback_url)
         with self._lock:
             self._status[job_id] = "queued"
+            self._errors[job_id] = None
             if spec.type == "preview":
                 self._jobs_preview.append(job)
             else:
@@ -105,6 +107,12 @@ class InMemoryBaseJobExecutor(GradingJobExecutor):
                 raise JobNotFoundError(f"Job not found: {job_id}")
             return self._status.get(job_id, "failed")
 
+    def get_error(self, job_id: str) -> str | None:
+        with self._lock:
+            if job_id not in self._status:
+                raise JobNotFoundError(f"Job not found: {job_id}")
+            return self._errors.get(job_id)
+
     def cancel(self, job_id: str) -> None:
         with self._lock:
             if job_id not in self._status:
@@ -114,6 +122,7 @@ class InMemoryBaseJobExecutor(GradingJobExecutor):
                 return
             self._cancelled.add(job_id)
             self._status[job_id] = "failed"
+            self._errors[job_id] = "Job cancelled."
             # Remove from preview queue if queued
             self._jobs_preview = deque(j for j in self._jobs_preview if j.id != job_id)
             self._jobs_run = deque(j for j in self._jobs_run if j.id != job_id)
@@ -197,9 +206,11 @@ class InMemoryBaseJobExecutor(GradingJobExecutor):
             with self._lock:
                 if job.id not in self._cancelled:
                     self._set_status(job.id, "completed")
-        except Exception:
+                    self._errors[job.id] = None
+        except Exception as exc:
             with self._lock:
                 self._set_status(job.id, "failed")
+                self._errors[job.id] = format_job_error(exc)
             logger.exception("Job failed", extra={"job_id": job.id})
 
     # ------- Execution orchestration -------

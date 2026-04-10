@@ -7,7 +7,7 @@ import nomad.api.exceptions  # type: ignore[import-untyped]
 from nomad import Nomad
 
 from gradeflow_backend.config import get_settings
-from gradeflow_backend.executors.base import GradingJobExecutor
+from gradeflow_backend.executors.base import GradingJobExecutor, format_job_error
 from gradeflow_backend.executors.exceptions import JobNotFoundError
 from gradeflow_backend.executors.inmemory_base import _load_entrypoint_source
 from gradeflow_backend.executors.registry import register
@@ -208,6 +208,38 @@ class NomadJobExecutor(GradingJobExecutor):
         if completed:
             return "completed"
         return "failed"
+
+    def get_error(self, job_id: str) -> str | None:
+        try:
+            allocations = cast(
+                list[dict[str, Any]],
+                self._nomad.job.get_allocations(job_id, namespace=self._namespace),
+            )
+        except nomad.api.exceptions.URLNotFoundNomadException as e:
+            logger.error("Nomad job not found", extra={"job_id": job_id})
+            raise JobNotFoundError(f"Job not found: {job_id}") from e
+
+        messages: list[str] = []
+        for allocation in allocations:
+            if allocation.get("ClientStatus") == "complete":
+                continue
+
+            task_states = cast(dict[str, Any], allocation.get("TaskStates") or {})
+            for task_name, task_state in task_states.items():
+                events = cast(list[dict[str, Any]], task_state.get("Events") or [])
+                for event in reversed(events):
+                    message = (
+                        event.get("DisplayMessage") or event.get("Message") or event.get("Type")
+                    )
+                    if message:
+                        messages.append(f"{task_name}: {message}")
+                        break
+
+        if not messages:
+            return None
+
+        deduped_messages = list(dict.fromkeys(messages))
+        return format_job_error("; ".join(deduped_messages))
 
     def start(self) -> None:
         pass

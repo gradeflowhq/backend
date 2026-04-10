@@ -1,7 +1,7 @@
 import yaml
 
 from tests.helpers.api import ApiClient
-from tests.helpers.data import QUESTION_SET_YAML, RUBRIC_YAML
+from tests.helpers.data import QUESTION_SET_YAML, RUBRIC_YAML, SUBMISSIONS_CSV
 
 
 def test_rubric_set_get_validate_delete(api: ApiClient) -> None:
@@ -103,3 +103,31 @@ def test_rubric_import_examplify_adapter_and_validate(api: ApiClient) -> None:
     val = api.validate_rubric(created.id)
     assert isinstance(val.errors, list)
     assert len(val.errors) == 0, f"Unexpected validation errors: {val.errors}"
+
+
+def test_rubric_status_inherit_submission_staleness(api: ApiClient) -> None:
+    created = api.create_assessment("Rubric Status")
+
+    api.set_question_set_yaml(created.id, QUESTION_SET_YAML)
+    api.set_rubric_yaml(created.id, RUBRIC_YAML)
+    api.set_submissions_csv(created.id, SUBMISSIONS_CSV)
+
+    question_set = api.get_question_set(created.id)
+    rubric = api.get_rubric(created.id)
+
+    assert question_set.status.is_stale is True
+    assert rubric.status.is_stale is True
+
+
+def test_rubric_status_clears_after_question_set_change_is_acknowledged(api: ApiClient) -> None:
+    created = api.create_assessment("Rubric Status Refresh")
+
+    api.set_question_set_yaml(created.id, QUESTION_SET_YAML)
+    api.set_rubric_yaml(created.id, RUBRIC_YAML)
+    api.set_question_set_yaml(created.id, QUESTION_SET_YAML)
+
+    stale = api.get_rubric(created.id)
+    assert stale.status.is_stale is True
+
+    refreshed = api.set_rubric_yaml(created.id, RUBRIC_YAML)
+    assert refreshed.status.is_stale is False

@@ -75,7 +75,9 @@ class JobsService:
 
     def get_status(self, job_id: str) -> JobStatusResponse:
         try:
-            return JobStatusResponse(job_id=job_id, status=self.executor.get_status(job_id))
+            status = self.executor.get_status(job_id)
+            error = self.executor.get_error(job_id) if status == "failed" else None
+            return JobStatusResponse(job_id=job_id, status=status, error=error)
         except JobNotFoundError as e:
             raise NotFoundError("Job not found") from e
 

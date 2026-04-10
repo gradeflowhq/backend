@@ -107,6 +107,7 @@ JobStatus = Literal["queued", "running", "completed", "failed"]
 class JobStatusResponse(BaseModel):
     job_id: str
     status: JobStatus
+    error: str | None = None
 
 
 class GradingJobSpec(BaseModel):

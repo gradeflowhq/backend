@@ -53,14 +53,18 @@ Set `DATABASE__URL` to the SQLAlchemy connection string for your database:
 - `EXECUTOR__EXECUTOR` — `NOMAD` (default) | `INMEMORY_CONTAINER` | `INMEMORY_SUBPROCESS` | `SYNCHRONOUS`
 - `EXECUTOR__ENGINE_COMMAND` — gradeflow-engine command (default: `gradeflow-engine`)
 - `EXECUTOR__TIMEOUT_S` — job timeout in seconds (default: `300`)
+- `EXECUTOR__POLL_INTERVAL_S` — polling interval in seconds for in-memory executors (default: `1.0`)
 - `EXECUTOR__NUM_WORKERS` — worker count for in-memory executors (default: `4`)
 - `EXECUTOR__CONTAINER_RUNTIME` — `docker` (default) for container executor
 - `EXECUTOR__CONTAINER_IMAGE` — engine image (default: `ghcr.io/gradeflowhq/gradeflow-engine:latest`)
+- `EXECUTOR__CONTAINER_WORKDIR` — working directory inside the container (default: `/local`)
 - `EXECUTOR__CALLBACK_BASE_URL` — absolute base URL for job callbacks (default: `http://host.docker.internal:8000`)
+- `EXECUTOR__CALLBACK_TIMEOUT_S` — timeout in seconds for callback POST requests (default: `10`)
 - `EXECUTOR__NOMAD_HOST` — Nomad HTTP host (default: `host.docker.internal`)
 - `EXECUTOR__NOMAD_PORT` — Nomad HTTP port (default: `4646`)
 - `EXECUTOR__NOMAD_TOKEN` — Nomad ACL token (optional)
 - `EXECUTOR__NOMAD_NAMESPACE` — Nomad namespace (optional)
+- `EXECUTOR__NOMAD_VERIFY_TLS` — verify TLS when talking to Nomad (default: `true`)
 - `EXECUTOR__NOMAD_DATACENTERS` — comma-separated list (default: `dc1`)
 - `EXECUTOR__NOMAD_CPU` — Nomad task CPU MHz (default: `200`)
 - `EXECUTOR__NOMAD_MEMORY_MB` — Nomad task memory MB (default: `512`)
@@ -107,11 +111,14 @@ docker run --name gradeflow-backend --network gradeflow --env-file .env -p 8000:
 - Refresh: POST /auth/refresh (JSON)
 - Logout: POST /auth/logout (requires access token)
 - Me: GET /auth/me (requires access token)
+- Update Me: PATCH /auth/me (requires access token)
 
 Access tokens are used in the Authorization header:
 Authorization: Bearer <access_token>
 
 Refresh tokens are single-use (rotation). On refresh, the old refresh token is revoked and a new pair is issued. Logout deletes all stored refresh tokens for the user.
+
+Changing email or password via PATCH /auth/me requires supplying `current_password`.
 
 ## Roles and Access Control
 
@@ -143,6 +150,7 @@ Route guards:
   - POST /auth/refresh -> TokenPairResponse
   - POST /auth/logout -> 204
   - GET /auth/me -> MeResponse
+  - PATCH /auth/me -> MeResponse
 
 - Assessments (requires access token)
   - POST /assessments -> create (creator becomes owner)
@@ -181,19 +189,25 @@ Route guards:
   - PUT /assessments/{id}/submissions/config -> save import config (editor)
   - GET /assessments/{id}/submissions/config -> get import config (member)
   - GET /assessments/{id}/submissions -> get parsed submissions (member)
-  - PUT /assessments/{id}/submissions/import -> import using stored source + config (editor)
-  - DELETE /assessments/{id}/submissions -> delete (editor)
+  - DELETE /assessments/{id}/submissions -> delete source data and config (editor)
 
 - Grading
   - GET /assessments/{id}/grading -> get graded results (member)
-  - GET /assessments/{id}/grading/job -> get current run job status (member)
+  - GET /assessments/{id}/grading/job -> get current run job (member)
+  - DELETE /assessments/{id}/grading/job -> cancel current run job (editor)
   - POST /assessments/{id}/grading -> run grading (editor) -> GradingJob
   - POST /assessments/{id}/grading/adjust -> adjust a single result (editor)
+  - POST /assessments/{id}/grading/bulk-adjust -> adjust multiple results (editor)
   - POST /assessments/{id}/grading/download -> download graded output (member)
   - DELETE /assessments/{id}/grading -> delete graded state (editor)
   - POST /assessments/{id}/grading/preview -> run preview (member) -> GradingJob
   - GET /assessments/{id}/grading/preview -> get preview results (member)
-  - GET /assessments/{id}/grading/preview/job -> get preview job status (member)
+  - GET /assessments/{id}/grading/preview/job -> get preview job (member)
+  - DELETE /assessments/{id}/grading/preview/job -> cancel preview job (member)
+
+- Jobs
+  - GET /jobs/{job_id} -> get job status -> JobStatusResponse
+  - POST /jobs/callback/{token} -> executor callback (internal) -> 204
 
 ### Response/Request Models
 
@@ -205,12 +219,19 @@ See `gradeflow_backend/schemas/` for Pydantic models. Notable external models fr
 - `SubmissionsSerializerConfig` (discriminated union for CSV / JSON / YAML output)
 
 Key backend schemas:
-- `AdjustableSubmission` — `Submission` extended with per-question `adjusted_points` / `adjusted_feedback`
-- `GradingResponse` — wraps `submissions: list[AdjustableSubmission]`
-- `GradeAdjustmentRequest` — targets a single `(student_id, question_id)` pair
+- `AdjustableQuestionResult` — `QuestionResult` extended with `adjusted_points` / `adjusted_feedback`
+- `AdjustableSubmission` — `Submission` with `result_map` typed as `dict[QuestionId, AdjustableQuestionResult]`
+- `GradingResponse` — wraps `submissions: list[AdjustableSubmission]` and a `SectionStatus`
+- `GradeAdjustmentRequest` — targets a single `(student_id, question_id)` pair with optional `adjusted_points` / `adjusted_feedback`
+- `BulkGradeAdjustmentRequest` — list of `GradeAdjustmentRequest` items (min 1)
+- `BulkGradeAdjustmentResponse` — `applied` count, `errors` list, and updated `result`
+- `GradingLimitConfig` — `limit`, `selection` (`first` | `random`), and optional `seed` for preview runs
+- `GradingPreviewRequest` — optional single `rule` and a `GradingLimitConfig`
 - `GradingJob` — returned by run / preview; contains `job_id` and a polling `url`
-- `SourceDataResponse` — parsed headers, rows, and `student_id_column` for the uploaded CSV
-- `SubmissionsImportConfig` — `answer_columns` and optional `point_columns` mapping
+- `JobStatusResponse` — `job_id`, `status` (`queued` | `running` | `completed` | `failed`), and optional `error`
+- `SourceDataResponse` — parsed `headers`, `rows`, `total_rows`, and `student_id_column` for the uploaded CSV
+- `SubmissionsImportConfig` — optional `answer_columns` list and optional `point_columns` mapping (`question_id` -> CSV column name)
+- `SectionStatus` — `updated_at` timestamp and `is_stale` flag, included in question set, rubric, and grading responses
 
 ## Example Workflow (cURL)
 
@@ -232,44 +253,54 @@ ACCESS="<access_token>"
 curl -s -X POST http://localhost:8000/assessments \
   -H "Authorization: Bearer $ACCESS" \
   -H "Content-Type: application/json" \
-  -d '{"id":"cs1-midterm","name":"Midterm"}'
+  -d '{"name":"Midterm"}'
+
+# Export ASSESSMENT_ID from the response
+ASSESSMENT_ID="<id>"
 
 # 4) Upload question set (raw YAML)
-curl -s -X PUT http://localhost:8000/assessments/cs1-midterm/question-set/upload \
+curl -s -X PUT http://localhost:8000/assessments/$ASSESSMENT_ID/question-set/upload \
   -H "Authorization: Bearer $ACCESS" \
   -H "Content-Type: application/json" \
-  -d '{"data":"question_map:\n  q1:\n    type: TEXT\n  q2:\n    type: NUMERIC\n","adapter_name":"YAML"}'
+  -d '{"data":"question_map:\n  q1:\n    type: TEXT\n  q2:\n    type: NUMERIC\n","serializer":{"format":"yaml"}}'
 
 # 5) Upload rubric (raw YAML)
-curl -s -X PUT http://localhost:8000/assessments/cs1-midterm/rubric/upload \
+curl -s -X PUT http://localhost:8000/assessments/$ASSESSMENT_ID/rubric/upload \
   -H "Authorization: Bearer $ACCESS" \
   -H "Content-Type: application/json" \
-  -d '{"data":"rules:\n  - type: EXACT_MATCH\n    question_id: q1\n    answer: \"Alice\"\n    max_points: 1\n  - type: NUMERIC_RANGE\n    question_id: q2\n    min_value: 0\n    max_value: 100\n    max_points: 2\n","adapter_name":"YAML"}'
+  -d '{"data":"rules:\n  - type: TEXT_MATCH\n    question_id: q1\n    answers: [\"Alice\"]\n  - type: NUMERIC_RANGE\n    question_id: q2\n    min_value: 0\n    max_value: 100\n","serializer":{"format":"yaml"}}'
 
 # 6a) Upload raw CSV source data
-curl -s -X PUT http://localhost:8000/assessments/cs1-midterm/submissions/source \
+curl -s -X PUT http://localhost:8000/assessments/$ASSESSMENT_ID/submissions/source \
   -H "Authorization: Bearer $ACCESS" \
   -H "Content-Type: application/json" \
   -d '{"data":"student_id,q1,q2\ns1,Alice,90\ns2,Bob,76\n","student_id_column":"student_id"}'
 
 # 6b) (Optional) save import config
-curl -s -X PUT http://localhost:8000/assessments/cs1-midterm/submissions/config \
+curl -s -X PUT http://localhost:8000/assessments/$ASSESSMENT_ID/submissions/config \
   -H "Authorization: Bearer $ACCESS" \
   -H "Content-Type: application/json" \
   -d '{"answer_columns":["q1","q2"]}'
 
-# 6c) Import submissions from stored source + config
-curl -s -X PUT http://localhost:8000/assessments/cs1-midterm/submissions/import \
-  -H "Authorization: Bearer $ACCESS"
-
 # 7) Run grading
-curl -s -X POST http://localhost:8000/assessments/cs1-midterm/grading \
+curl -s -X POST http://localhost:8000/assessments/$ASSESSMENT_ID/grading \
   -H "Authorization: Bearer $ACCESS" \
   -H "Content-Type: application/json" \
   -d '{}'
 
-# 8) Download graded output (CSV)
-curl -s -X POST http://localhost:8000/assessments/cs1-midterm/grading/download \
+# Export JOB_ID from the response
+JOB_ID="<job_id>"
+
+# 8) Poll job status
+curl -s http://localhost:8000/jobs/$JOB_ID \
+  -H "Authorization: Bearer $ACCESS"
+
+# 9) Get graded results
+curl -s http://localhost:8000/assessments/$ASSESSMENT_ID/grading \
+  -H "Authorization: Bearer $ACCESS"
+
+# 10) Download graded output (CSV)
+curl -s -X POST http://localhost:8000/assessments/$ASSESSMENT_ID/grading/download \
   -H "Authorization: Bearer $ACCESS" \
   -H "Content-Type: application/json" \
   -d '{"serializer":{"format":"csv"}}'
@@ -296,7 +327,7 @@ mypy gradeflow_backend
 pytest --cov=gradeflow_backend --cov-report=term --cov-report=xml
 ```
 
-Pytest creates a temporary SQLite database per test function via fixtures and overrides the FastAPI dependency injection for sessions. To run against a real database, set `DB_URL` in your environment before running pytest.
+Pytest creates a temporary SQLite database per test function via fixtures and overrides the FastAPI dependency injection for sessions. To run against a real database, set `DATABASE__URL` in your environment before running pytest.
 
 ## License
 

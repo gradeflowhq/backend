@@ -69,8 +69,8 @@ def _schemas(openapi: OpenAPI) -> SchemasDict:
     return narrowed
 
 
-def _get_schema(openapi: OpenAPI, model_cls: type) -> SchemaDict:
-    name = model_cls.__name__
+def _get_schema(openapi: OpenAPI, model_cls: type, name: str | None = None) -> SchemaDict:
+    name = name or model_cls.__name__
     sch = _schemas(openapi)
     assert name in sch, f"{name} not in components"
     return sch[name]
@@ -234,7 +234,7 @@ def test_nullable_string_fields_converted_in_backend_models() -> None:
 def test_nullable_number_integer_fields_converted_in_engine_rule_models() -> None:
     openapi: OpenAPI = _client_openapi()
 
-    nrr_schema: SchemaDict = _get_schema(openapi, NumericRangeRule)
+    nrr_schema: SchemaDict = _get_schema(openapi, NumericRangeRule, name="NumericRangeRule-Input")
     min_value: SchemaDict = _get_prop_schema(openapi, nrr_schema, "min_value")
     max_value: SchemaDict = _get_prop_schema(openapi, nrr_schema, "max_value")
     tmin = min_value.get("type")
@@ -245,7 +245,7 @@ def test_nullable_number_integer_fields_converted_in_engine_rule_models() -> Non
     assert set(typed_tmin) == {"number", "null"}
     assert set(typed_tmax) == {"number", "null"}
 
-    lr_schema: SchemaDict = _get_schema(openapi, LengthRule)
+    lr_schema: SchemaDict = _get_schema(openapi, LengthRule, name="LengthRule-Input")
     min_length: SchemaDict = _get_prop_schema(openapi, lr_schema, "min_length")
     max_length: SchemaDict = _get_prop_schema(openapi, lr_schema, "max_length")
     tminl = min_length.get("type")

@@ -16,7 +16,7 @@ dependencies = [
   "email-validator~=2.3",
   "python-nomad~=2.1.0",
   "valkey~=6.1.1",
-  "gradeflow-engine @ git+https://github.com/gradeflowhq/engine",
+  "gradeflow-engine[ml] @ git+https://github.com/gradeflowhq/engine",
 ]
 
 [project.optional-dependencies]

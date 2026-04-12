@@ -56,8 +56,57 @@ class ApiClient:
             headers={"Content-Type": "application/x-www-form-urlencoded"},
         )
 
-    def try_me(self) -> Response:
-        return self.client.get("/auth/me", headers=self._auth_header)
+    def try_me(self, use_auth: bool = True) -> Response:
+        headers = self._auth_header if use_auth else {}
+        return self.client.get("/auth/me", headers=headers)
+
+    def try_refresh(self, refresh_token: str) -> Response:
+        return self.client.post(
+            "/auth/refresh",
+            json={"refresh_token": refresh_token},
+        )
+
+    def try_logout(self, access_token: str) -> Response:
+        return self.client.post(
+            "/auth/logout",
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+
+    def try_update_me(
+        self,
+        *,
+        name: str | None = None,
+        email: str | None = None,
+        current_password: str | None = None,
+        new_password: str | None = None,
+    ) -> Response:
+        payload: dict[str, object] = {}
+        if name is not None:
+            payload["name"] = name
+        if email is not None:
+            payload["email"] = email
+        if current_password is not None:
+            payload["current_password"] = current_password
+        if new_password is not None:
+            payload["new_password"] = new_password
+        return self.client.patch(
+            "/auth/me",
+            json=payload,
+            headers=self._auth_header,
+        )
+
+    # -----------------
+    # Health and registry
+    # -----------------
+
+    def try_get_health(self) -> Response:
+        return self.client.get("/health")
+
+    def try_get_registry_serializers(self, kind: str) -> Response:
+        return self.client.get(f"/registry/serializers/{kind}")
+
+    def try_get_registry_adapters(self, kind: str) -> Response:
+        return self.client.get(f"/registry/adapters/{kind}")
 
     # Auth (success-path delegates to try-)
 
@@ -372,6 +421,25 @@ class ApiClient:
             headers=self._auth_header,
         )
 
+    def try_get_source_data(self, assessment_id: str) -> Response:
+        return self.client.get(
+            f"/assessments/{assessment_id}/submissions/source",
+            headers=self._auth_header,
+        )
+
+    def try_save_submission_config(self, assessment_id: str, config: dict[str, object]) -> Response:
+        return self.client.put(
+            f"/assessments/{assessment_id}/submissions/config",
+            json=config,
+            headers=self._auth_header,
+        )
+
+    def try_get_submission_config(self, assessment_id: str) -> Response:
+        return self.client.get(
+            f"/assessments/{assessment_id}/submissions/config",
+            headers=self._auth_header,
+        )
+
     def try_set_submissions_csv(self, assessment_id: str, csv_str: str) -> Response:
         r = self.try_upload_source_data(assessment_id, csv_str)
         if r.status_code != 200:
@@ -410,11 +478,15 @@ class ApiClient:
     # Grading
     # -----------------
 
-    def try_run_grading(self, assessment_id: str) -> Response:
-        # Start grading
+    def try_run_grading(
+        self, assessment_id: str, remove_adjustments: bool | None = None
+    ) -> Response:
+        payload: dict[str, object] = {}
+        if remove_adjustments is not None:
+            payload["remove_adjustments"] = remove_adjustments
         return self.client.post(
             f"/assessments/{assessment_id}/grading",
-            json={},
+            json=payload,
             headers=self._auth_header,
         )
 
@@ -430,6 +502,9 @@ class ApiClient:
         )
         assert r.status_code == 200, r.text
         return GradingJob.model_validate(r.json())
+
+    def try_get_job_status(self, job_id: str) -> Response:
+        return self.client.get(f"/jobs/{job_id}")
 
     def get_job_status(self, job_id: str) -> JobStatusResponse:
         r = self.client.get(f"/jobs/{job_id}")
@@ -476,6 +551,55 @@ class ApiClient:
             json=adjustment,
             headers=self._auth_header,
         )
+
+    def try_bulk_adjust(self, assessment_id: str, adjustments: list[dict[str, object]]) -> Response:
+        return self.client.post(
+            f"/assessments/{assessment_id}/grading/bulk-adjust",
+            json={"adjustments": adjustments},
+            headers=self._auth_header,
+        )
+
+    def try_get_grading_job(self, assessment_id: str) -> Response:
+        return self.client.get(
+            f"/assessments/{assessment_id}/grading/job",
+            headers=self._auth_header,
+        )
+
+    def try_cancel_grading_job(self, assessment_id: str) -> Response:
+        return self.client.delete(
+            f"/assessments/{assessment_id}/grading/job",
+            headers=self._auth_header,
+        )
+
+    def try_cancel_preview_job(self, assessment_id: str) -> Response:
+        return self.client.delete(
+            f"/assessments/{assessment_id}/grading/preview/job",
+            headers=self._auth_header,
+        )
+
+    def try_get_preview_job(self, assessment_id: str) -> Response:
+        return self.client.get(
+            f"/assessments/{assessment_id}/grading/preview/job",
+            headers=self._auth_header,
+        )
+
+    def try_callback(
+        self,
+        token: str,
+        *,
+        assessment_id: str,
+        type: str,
+        submissions: list[dict[str, object]] | None = None,
+        remove_adjustments: bool = False,
+    ) -> Response:
+        payload: dict[str, object | list[dict[str, object]] | bool] = {
+            "assessment_id": assessment_id,
+            "type": type,
+            "remove_adjustments": remove_adjustments,
+        }
+        if submissions is not None:
+            payload["submissions"] = submissions
+        return self.client.post(f"/jobs/callback/{token}", json=payload)
 
     def adjust_grading(self, assessment_id: str, adjustment: dict[str, object]) -> GradingResponse:
         r = self.try_adjust_grading(assessment_id=assessment_id, adjustment=adjustment)

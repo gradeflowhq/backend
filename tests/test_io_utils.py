@@ -1,0 +1,36 @@
+from gradeflow_engine.io.sources import BytesSource, StringSource
+
+from gradeflow_backend.utils.io import blob_from_str, source_from_data
+
+
+def test_blob_from_str_encodes_to_bytes() -> None:
+    blob = blob_from_str("hello: world", media_type="application/yaml", ext="yaml")
+    assert isinstance(blob.data, bytes)
+    assert blob.data == b"hello: world"
+
+
+def test_blob_from_str_sets_media_type_and_extension() -> None:
+    blob = blob_from_str("data", media_type="application/json", ext="json")
+    assert blob.media_type == "application/json"
+    assert blob.extension == "json"
+
+
+def test_source_from_data_bytes_returns_bytes_source() -> None:
+    src = source_from_data(b"\x00\x01\x02")
+    assert isinstance(src, BytesSource)
+    blob = src.read()
+    assert blob.media_type == "application/octet-stream"
+    assert blob.extension == "bin"
+
+
+def test_source_from_data_str_returns_string_source() -> None:
+    src = source_from_data("hello")
+    assert isinstance(src, StringSource)
+    blob = src.read()
+    assert blob.media_type == "text/plain"
+    assert blob.extension == "txt"
+
+
+def test_source_from_data_bytearray_treated_as_bytes() -> None:
+    src = source_from_data(bytearray(b"abc"))
+    assert isinstance(src, BytesSource)

@@ -3,6 +3,7 @@ import io
 from datetime import datetime
 
 import yaml
+from gradeflow_engine.exceptions import GradeFlowError
 from gradeflow_engine.question_sets.model import QuestionSet
 from gradeflow_engine.rubrics.model import Rubric
 
@@ -67,8 +68,8 @@ def _compute_coverage(a: Assessment) -> AssessmentCoverage | None:
             covered=cov.covered,
             percentage=cov.percentage,
         )
-    except (yaml.YAMLError, ValueError, AttributeError):
-        return None
+    except Exception as e:
+        raise GradeFlowError(f"Failed to compute rubric coverage: {e}") from e
 
 
 def _build_summary(a: Assessment, submission_repo: SubmissionRepository) -> AssessmentSummary:

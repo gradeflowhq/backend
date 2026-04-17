@@ -6,6 +6,7 @@ import gradeflow_engine as gradeflow_engine
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from gradeflow_engine.exceptions import GradeFlowError, GradeFlowValidationError
 from pydantic import ValidationError
 
 from gradeflow_backend.config import get_settings
@@ -87,6 +88,19 @@ async def rubric_validation_handler(_: Request, exc: RubricValidationError) -> J
 async def pydantic_validation_handler(_: Request, exc: ValidationError) -> JSONResponse:
     messages = [str(e) for e in exc.errors()]  # extract error messages
     payload = ErrorResponse(errors=messages).model_dump()
+    return JSONResponse(status_code=422, content=payload)
+
+
+@app.exception_handler(GradeFlowValidationError)
+async def gradeflow_validation_handler(_: Request, exc: GradeFlowValidationError) -> JSONResponse:
+    messages = [str(e) for e in exc.errors()]  # extract error messages
+    payload = ErrorResponse(errors=messages).model_dump()
+    return JSONResponse(status_code=422, content=payload)
+
+
+@app.exception_handler(GradeFlowError)
+async def gradeflow_error_handler(_: Request, exc: GradeFlowError) -> JSONResponse:
+    payload = ErrorResponse(errors=[str(exc)]).model_dump()
     return JSONResponse(status_code=422, content=payload)
 
 

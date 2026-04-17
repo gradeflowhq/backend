@@ -3,6 +3,7 @@ from gradeflow_engine.core import (
     load_question_set_from_blob,
     load_question_set_via_adapter,
 )
+from gradeflow_engine.exceptions import GradeFlowError
 from gradeflow_engine.question_sets.model import QuestionSet
 
 from gradeflow_backend.repositories.assessments import AssessmentRepository
@@ -105,7 +106,7 @@ class QuestionSetService(BaseService):
         )
         try:
             return ParseSubmissionsResponse(submissions=question_set.parse(raw_submissions))
-        except ValueError as e:
+        except GradeFlowError as e:
             raise BadRequestError(f"Failed to parse submissions: {e}") from e
 
     # ------------------------------------------------------------------

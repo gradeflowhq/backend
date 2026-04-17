@@ -99,6 +99,8 @@ class GradingService(BaseService):
         rule: QuestionRule | None = None,
         config: GradingLimitConfig | None = None,
         remove_adjustments: bool = False,
+        override_results: bool = True,
+        grade_questions_without_rule: bool = True,
     ) -> GradingJob:
         a = self._get_or_404(assessment_id)
         qset = load_question_set(a)
@@ -128,6 +130,8 @@ class GradingService(BaseService):
                 question_set=qset,
                 rubric=rubric,
                 remove_adjustments=remove_adjustments,
+                override_results=override_results,
+                grade_questions_without_rule=grade_questions_without_rule,
             ),
             request,
         )
@@ -145,6 +149,8 @@ class GradingService(BaseService):
             request=request,
             jobs=jobs,
             remove_adjustments=req.remove_adjustments,
+            override_results=req.override_results,
+            grade_questions_without_rule=True,
         )
 
     def run_preview(
@@ -161,6 +167,8 @@ class GradingService(BaseService):
             jobs=jobs,
             rule=req.rule,
             config=req.config,
+            override_results=True,
+            grade_questions_without_rule=False,
         )
 
     def get(self, assessment_id: str) -> GradingResponse:

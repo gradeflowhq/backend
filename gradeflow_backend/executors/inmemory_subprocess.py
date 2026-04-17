@@ -27,6 +27,8 @@ class InMemorySubprocessJobExecutor(InMemoryBaseJobExecutor):
         job_type: str,
         point_columns_json: str = "{}",
         remove_adjustments: bool = False,
+        override_results: bool = True,
+        grade_questions_without_rule: bool = True,
     ) -> None:
         """
         Invoke the shared entrypoint in a local Python subprocess, passing GRADEFLOW_* env vars.
@@ -52,6 +54,8 @@ class InMemorySubprocessJobExecutor(InMemoryBaseJobExecutor):
             "GRADEFLOW_OUT_PATH": str(out_path),
             "GRADEFLOW_POINT_COLUMNS_JSON": point_columns_json,
             "GRADEFLOW_REMOVE_ADJUSTMENTS": str(remove_adjustments).lower(),
+            "GRADEFLOW_OVERRIDE_RESULTS": str(override_results).lower(),
+            "GRADEFLOW_GRADE_QUESTIONS_WITHOUT_RULE": str(grade_questions_without_rule).lower(),
         }
 
         logger.info(

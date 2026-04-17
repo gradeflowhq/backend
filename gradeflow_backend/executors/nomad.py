@@ -82,6 +82,8 @@ def _build_nomad_job(
         "GRADEFLOW_CALLBACK_TIMEOUT_S": str(s.callback_timeout_s),
         "GRADEFLOW_POINT_COLUMNS_JSON": point_columns_json,
         "GRADEFLOW_REMOVE_ADJUSTMENTS": str(spec.remove_adjustments).lower(),
+        "GRADEFLOW_OVERRIDE_RESULTS": str(spec.override_results).lower(),
+        "GRADEFLOW_GRADE_QUESTIONS_WITHOUT_RULE": str(spec.grade_questions_without_rule).lower(),
     }
 
     templates: list[dict[str, str]] = [

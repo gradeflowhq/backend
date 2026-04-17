@@ -39,7 +39,11 @@ class SynchronousJobExecutor(GradingJobExecutor):
 
             # Grade
             submissions = spec.rubric.grade(
-                submissions, spec.question_set.question_map, strict=False
+                submissions,
+                spec.question_set.question_map,
+                strict=False,
+                override_results=spec.override_results,
+                grade_questions_without_rule=spec.grade_questions_without_rule,
             )
 
             # Build result

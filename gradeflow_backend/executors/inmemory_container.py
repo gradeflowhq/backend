@@ -75,6 +75,8 @@ class InMemoryContainerJobExecutor(InMemoryBaseJobExecutor):
         job_type: str,
         point_columns_json: str = "{}",
         remove_adjustments: bool = False,
+        override_results: bool = True,
+        grade_questions_without_rule: bool = True,
     ) -> None:
         """
         Invoke the shared entrypoint inside a container, injecting GRADEFLOW_* env vars.
@@ -117,6 +119,10 @@ class InMemoryContainerJobExecutor(InMemoryBaseJobExecutor):
             f"GRADEFLOW_POINT_COLUMNS_JSON={point_columns_json}",
             "-e",
             f"GRADEFLOW_REMOVE_ADJUSTMENTS={str(remove_adjustments).lower()}",
+            "-e",
+            f"GRADEFLOW_OVERRIDE_RESULTS={str(override_results).lower()}",
+            "-e",
+            f"GRADEFLOW_GRADE_QUESTIONS_WITHOUT_RULE={str(grade_questions_without_rule).lower()}",
         ]
         # Insert env flags after 'run'
         try:

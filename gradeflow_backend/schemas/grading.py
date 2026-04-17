@@ -33,6 +33,10 @@ class GradingRunRequest(BaseModel):
         default=False,
         description="When True, clear all manual adjustments on re-graded submissions.",
     )
+    override_results: bool = Field(
+        default=True,
+        description="When True, a rule result overwrites any pre-existing points/feedback.",
+    )
 
 
 class GradingResponse(BaseModel):
@@ -120,6 +124,8 @@ class GradingJobSpec(BaseModel):
         default=False,
         description="When True, clear all manual adjustments on re-graded submissions.",
     )
+    override_results: bool = Field(default=True)
+    grade_questions_without_rule: bool = Field(default=True)
 
 
 class GradingJobResult(BaseModel):

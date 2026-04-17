@@ -40,9 +40,13 @@ class Config(BaseSettings):
     point_columns_json: str = Field(
         default="{}", description="JSON-encoded {qid: col} passthrough point column mapping"
     )
+
+    # Misc
     remove_adjustments: bool = Field(
         default=False, description="When True, clear manual adjustments on re-graded submissions"
     )
+    override_results: bool = Field(default=True)
+    grade_questions_without_rule: bool = Field(default=True)
 
     def resolved_submissions(self) -> Path:
         return self.submissions_path or (self.workdir / "submissions.csv")
@@ -72,6 +76,8 @@ def _run_engine_cli(
     out_yaml: Path,
     timeout_s: int,
     point_columns: dict[str, str] | None = None,
+    override_results: bool = True,
+    grade_questions_without_rule: bool = True,
 ) -> None:
     cmd = [
         engine_bin,
@@ -92,6 +98,10 @@ def _run_engine_cli(
         "yaml",
         "--out",
         str(out_yaml),
+        "--rubric-override-results" if override_results else "--no-rubric-override-results",
+        "--rubric-grade-questions-without-rule"
+        if grade_questions_without_rule
+        else "--no-rubric-grade-questions-without-rule",
     ]
     for qid, col in (point_columns or {}).items():
         cmd += ["--point-column", f"{qid}={col}"]
@@ -134,6 +144,8 @@ def main() -> int:
         out_yaml=out_yaml,
         timeout_s=cfg.timeout_s,
         point_columns=json.loads(cfg.point_columns_json),
+        override_results=cfg.override_results,
+        grade_questions_without_rule=cfg.grade_questions_without_rule,
     )
 
     try:

@@ -238,6 +238,8 @@ class InMemoryBaseJobExecutor(GradingJobExecutor):
                 job_type=spec.type,
                 point_columns_json=json.dumps(render_point_columns_map(spec)),
                 remove_adjustments=spec.remove_adjustments,
+                override_results=spec.override_results,
+                grade_questions_without_rule=spec.grade_questions_without_rule,
             )
 
     # ------- Abstract hook to implement in subclasses -------
@@ -256,6 +258,8 @@ class InMemoryBaseJobExecutor(GradingJobExecutor):
         job_type: str,  # "run" | "preview"
         point_columns_json: str = "{}",
         remove_adjustments: bool = False,
+        override_results: bool = True,
+        grade_questions_without_rule: bool = True,
     ) -> None:
         """
         Subclasses must implement this to run the shared entrypoint and produce out_path.

@@ -1,6 +1,6 @@
 # GradeFlow Backend
 
-A FastAPI backend that wraps the GradeFlow Engine to manage assessments, question sets, rubrics, submissions, and grading. It provides JWT-based authentication with access/refresh tokens, membership and roles, and typed request/response models.
+A FastAPI backend that wraps the GradeFlow Engine to manage assessments, question sets, rubrics, submissions, and grading. It uses Zitadel as an external identity provider for authentication, with role-based membership and typed request/response models.
 
 This is intended as a thin layer around the GradeFlow Engine.
 
@@ -24,17 +24,12 @@ pip install -e ".[mysql]"
 
 ### Configuration
 
-Settings are loaded from environment variables (or an optional `.env` file) using [pydantic-settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/) with `env_nested_delimiter='__'`. Nested fields are addressed with `__`, e.g. `SECURITY__JWT_SECRET` sets `settings.security.jwt_secret`.
+Settings are loaded from environment variables (or an optional `.env` file) using [pydantic-settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/) with `env_nested_delimiter='__'`. Nested fields are addressed with `__`, e.g. `ZITADEL__AUTHORITY` sets `settings.zitadel.authority`.
 
-**Security** (`SECURITY__*`)
-- `SECURITY__JWT_SECRET` — symmetric secret for HS256 (default: `change-me-in-prod`)
-- `SECURITY__JWT_ALGORITHM` — default: `HS256`
-- `SECURITY__JWT_ISSUER` — default: `gradeflow-api`
-- `SECURITY__JWT_AUDIENCE` — default: `gradeflow-clients`
-- `SECURITY__JWT_ACCESS_EXPIRES_MINUTES` — default: `30`
-- `SECURITY__JWT_REFRESH_EXPIRES_DAYS` — default: `14`
-- `SECURITY__JWT_KID` — optional key id
-- `SECURITY__PASSWORD_MIN_LENGTH` — default: `12`
+**Zitadel (Identity Provider)** (`ZITADEL__*`)
+- `ZITADEL__AUTHORITY` — Zitadel instance URL (default: `https://zitadel.cloud`)
+- `ZITADEL__CLIENT_ID` — OAuth2 Client ID from Zitadel
+- `ZITADEL__ORG_DOMAIN` — Primary org domain — scopes login so users type username only (optional)
 
 **Database** (`DATABASE__*`)
 
@@ -106,19 +101,16 @@ docker run --name gradeflow-backend --network gradeflow --env-file .env -p 8000:
 
 ## Authentication
 
-- Signup: POST /auth/signup (JSON)
-- Token (OAuth2 Password): POST /auth/token (form-encoded)
-- Refresh: POST /auth/refresh (JSON)
-- Logout: POST /auth/logout (requires access token)
-- Me: GET /auth/me (requires access token)
-- Update Me: PATCH /auth/me (requires access token)
+Authentication is handled by [Zitadel](https://zitadel.com), an external identity provider. The backend validates Zitadel-issued JWTs (RS256) via JWKS and syncs user info to the local database on first access.
 
-Access tokens are used in the Authorization header:
+- Me: GET /users/me (requires access token) — returns synced user info from DB
+
+Access tokens are obtained from Zitadel and used in the Authorization header:
+```
 Authorization: Bearer <access_token>
+```
 
-Refresh tokens are single-use (rotation). On refresh, the old refresh token is revoked and a new pair is issued. Logout deletes all stored refresh tokens for the user.
-
-Changing email or password via PATCH /auth/me requires supplying `current_password`.
+User records are automatically created/updated in the local database when a valid Zitadel token is first seen (email and name synced from token claims).
 
 ## Roles and Access Control
 
@@ -144,13 +136,8 @@ Route guards:
   - GET /registry/serializers/rubrics
   - GET /registry/serializers/submissions
 
-- Auth
-  - POST /auth/signup -> TokenPairResponse
-  - POST /auth/token (OAuth2 Password; form fields username=email, password=...) -> TokenPairResponse
-  - POST /auth/refresh -> TokenPairResponse
-  - POST /auth/logout -> 204
-  - GET /auth/me -> MeResponse
-  - PATCH /auth/me -> MeResponse
+- Users
+  - GET /users/me -> MeResponse (synced from Zitadel token)
 
 - Assessments (requires access token)
   - POST /assessments -> create (creator becomes owner)

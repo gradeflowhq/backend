@@ -5,17 +5,30 @@ from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-class SecuritySettings(BaseModel):
-    # JWT
-    jwt_algorithm: str = Field(default="HS256")
-    jwt_access_expires_minutes: int = Field(default=30)
-    jwt_refresh_expires_days: int = Field(default=14)
-    jwt_issuer: str = Field(default="gradeflow-api")
-    jwt_audience: str = Field(default="gradeflow-clients")
-    jwt_secret: str = Field(default="change-me-in-prod")
-    jwt_kid: str | None = Field(default=None)
-    # Password policy
-    password_min_length: int = Field(default=12)
+class ZitadelSettings(BaseModel):
+    authority: str = Field(
+        default="https://zitadel.cloud",
+        description="Zitadel instance URL (issuer)",
+    )
+    client_id: str = Field(
+        default="",
+        description="OAuth2 Client ID from Zitadel",
+    )
+    audience: str = Field(
+        default="",
+        description=(
+            "Expected JWT audience (aud) claim. In Zitadel this is typically "
+            "the Project Resource ID. Falls back to client_id when empty."
+        ),
+    )
+    org_domain: str = Field(
+        default="",
+        description="Primary org domain — scopes login so users type username only",
+    )
+    jwks_cache_ttl: int = Field(
+        default=300,
+        description="JWKS cache lifetime in seconds (Zitadel rotates keys without notice)",
+    )
 
 
 class DatabaseSettings(BaseModel):
@@ -100,7 +113,7 @@ class AppSettings(BaseSettings):
         case_sensitive=False,
     )
 
-    security: SecuritySettings = SecuritySettings()
+    zitadel: ZitadelSettings = ZitadelSettings()
     database: DatabaseSettings = DatabaseSettings()
     cors: CorsSettings = CorsSettings()
     executor: ExecutorSettings = ExecutorSettings()

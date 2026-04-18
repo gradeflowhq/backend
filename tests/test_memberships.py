@@ -1,13 +1,10 @@
-from gradeflow_backend.schemas.auth import TokenPairResponse
 from tests.helpers.api import ApiClient
 
 
 def test_memberships_owner_can_manage(api: ApiClient) -> None:
     created = api.create_assessment("Midterm")
 
-    viewer = ApiClient(api.client)
-    v_tokens: TokenPairResponse = viewer.signup("viewer@example.com", "Strong-Pass-12345!")
-    viewer.set_access_token(v_tokens.access_token)
+    viewer = api.create_other_user("viewer@example.com")
     viewer_id = viewer.me().id
 
     add_resp = api.add_member(created.id, user_email="viewer@example.com")
@@ -33,9 +30,7 @@ def test_memberships_owner_can_manage(api: ApiClient) -> None:
 def test_memberships_non_owner_blocked(api: ApiClient) -> None:
     created = api.create_assessment("Midterm")
 
-    other = ApiClient(api.client)
-    o_tokens: TokenPairResponse = other.signup("other@example.com", "Strong-Pass-12345!")
-    other.set_access_token(o_tokens.access_token)
+    other = api.create_other_user("other@example.com")
     other_id = other.me().id
 
     resp_add = other.try_add_member(created.id, user_email="other@example.com", role="viewer")
@@ -57,9 +52,7 @@ def test_add_member_user_not_found(api: ApiClient) -> None:
 def test_viewer_can_list_members(api: ApiClient) -> None:
     created = api.create_assessment("Viewer List")
 
-    viewer = ApiClient(api.client)
-    tokens: TokenPairResponse = viewer.signup("viewer_list@example.com", "Strong-Pass-12345!")
-    viewer.set_access_token(tokens.access_token)
+    viewer = api.create_other_user("viewer_list@example.com")
 
     api.add_member(created.id, user_email="viewer_list@example.com", role="viewer")
 
@@ -70,7 +63,7 @@ def test_viewer_can_list_members(api: ApiClient) -> None:
 
 
 def test_add_member_with_explicit_role(api: ApiClient) -> None:
-    ApiClient(api.client).signup("editor_exp@example.com", "Strong-Pass-12345!")
+    api.create_other_user("editor_exp@example.com")
     created = api.create_assessment("Explicit Role")
 
     resp = api.add_member(created.id, user_email="editor_exp@example.com", role="editor")

@@ -12,7 +12,7 @@ from gradeflow_backend.openapi import convert_primitive_anyof_merge_equal_or_abs
 
 # Backend schemas with nullable primitives and other shapes
 from gradeflow_backend.schemas.assessments import AssessmentResponse
-from gradeflow_backend.schemas.auth import MeResponse, SignupRequest
+from gradeflow_backend.schemas.auth import MeResponse
 from gradeflow_backend.schemas.grading import GradingDownloadRequest
 from gradeflow_backend.schemas.rubrics import RubricResponse
 from gradeflow_backend.schemas.submissions import SubmissionsResponse
@@ -125,7 +125,7 @@ def _traverse_and_convert_local(node: JSONValue) -> None:
 
 def test_openapi_union_primitive_type_array() -> None:
     openapi: OpenAPI = _client_openapi()
-    model_schema: SchemaDict = _get_schema(openapi, SignupRequest)
+    model_schema: SchemaDict = _get_schema(openapi, MeResponse)
     name_schema: SchemaDict = _get_prop_schema(openapi, model_schema, "name")
 
     assert "type" in name_schema, "Union schema didn't use primitive type array"
@@ -133,7 +133,6 @@ def test_openapi_union_primitive_type_array() -> None:
     assert isinstance(tval, list)
     typed_tval: list[str] = cast(list[str], tval)
     assert set(typed_tval) == {"string", "null"}
-    assert name_schema.get("maxLength") == 255
 
 
 def test_openapi_idempotent() -> None:

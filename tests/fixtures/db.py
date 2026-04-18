@@ -23,7 +23,6 @@ def _test_db_url(tmp_path: Path) -> str:
 
 @pytest.fixture(scope="function")
 def test_engine(tmp_path: Path) -> Generator[Engine, None, None]:
-    os.environ.setdefault("JWT_SECRET", "test-secret")
     url = _test_db_url(tmp_path)
     dialect = make_url(url).drivername.split("+")[0]
     kwargs: dict[str, Any] = {"echo": False, "future": True}

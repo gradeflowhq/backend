@@ -1,35 +1,22 @@
 from pydantic import BaseModel, EmailStr, Field
 
 
-class SignupRequest(BaseModel):
-    email: EmailStr
-    name: str | None = Field(default=None, max_length=255)
-    password: str = Field(..., min_length=12, max_length=128)
+class ZitadelTokenPayload(BaseModel):
+    """
+    Typed representation of the JWT claims Zitadel includes in access tokens.
+    Only the fields we actually use are declared — extra fields are ignored.
+    """
 
-
-class LoginRequest(BaseModel):
-    email: EmailStr
-    password: str
-
-
-class TokenPairResponse(BaseModel):
-    access_token: str
-    refresh_token: str
-    token_type: str = "bearer"
-
-
-class RefreshRequest(BaseModel):
-    refresh_token: str
+    sub: str = Field(..., description="Zitadel user ID")
+    email: str | None = Field(default=None)
+    name: str | None = Field(default=None)
+    iss: str = Field(..., description="Token issuer")
+    aud: str | list[str] = Field(..., description="Token audience")
 
 
 class MeResponse(BaseModel):
+    """Response for the /users/me endpoint — sourced from the local DB user."""
+
     id: str
     email: EmailStr
     name: str | None = None
-
-
-class UpdateMeRequest(BaseModel):
-    name: str | None = Field(default=None, max_length=255)
-    email: EmailStr | None = Field(default=None)
-    current_password: str | None = Field(default=None)
-    new_password: str | None = Field(default=None, min_length=12, max_length=128)

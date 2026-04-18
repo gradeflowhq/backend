@@ -1,4 +1,3 @@
-from gradeflow_backend.schemas.auth import TokenPairResponse
 from tests.helpers.api import ApiClient
 from tests.helpers.data import QUESTION_SET_YAML, RUBRIC_YAML, SUBMISSIONS_CSV
 
@@ -62,9 +61,7 @@ def test_assessment_list_summary_graded_count(api: ApiClient) -> None:
 
 
 def test_assessment_get_non_member_forbidden(api: ApiClient) -> None:
-    other = ApiClient(api.client)
-    tokens: TokenPairResponse = other.signup("stranger@example.com", "Strong-Pass-12345!")
-    other.set_access_token(tokens.access_token)
+    other = api.create_other_user("stranger@example.com")
 
     created = api.create_assessment("Private")
     r = other.try_get_assessment(created.id)
@@ -72,12 +69,9 @@ def test_assessment_get_non_member_forbidden(api: ApiClient) -> None:
 
 
 def test_assessment_update_non_owner_forbidden(api: ApiClient) -> None:
-    other = ApiClient(api.client)
-    tokens: TokenPairResponse = other.signup("editor2@example.com", "Strong-Pass-12345!")
-    other.set_access_token(tokens.access_token)
+    other = api.create_other_user("editor2@example.com")
 
     created = api.create_assessment("Owner Only")
-    # Add other as editor (not owner)
     api.add_member(created.id, user_email="editor2@example.com", role="editor")
 
     r = other.try_update_assessment(created.id, name="Hijacked")
@@ -85,9 +79,7 @@ def test_assessment_update_non_owner_forbidden(api: ApiClient) -> None:
 
 
 def test_assessment_delete_non_owner_forbidden(api: ApiClient) -> None:
-    other = ApiClient(api.client)
-    tokens: TokenPairResponse = other.signup("viewer3@example.com", "Strong-Pass-12345!")
-    other.set_access_token(tokens.access_token)
+    other = api.create_other_user("viewer3@example.com")
 
     created = api.create_assessment("Owner Delete Only")
     api.add_member(created.id, user_email="viewer3@example.com", role="viewer")

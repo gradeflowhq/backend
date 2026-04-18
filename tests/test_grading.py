@@ -272,11 +272,7 @@ def test_adjust_nonexistent_student_rejected(api: ApiClient) -> None:
 
 
 def test_grading_requires_editor_role(api: ApiClient) -> None:
-    from gradeflow_backend.schemas.auth import TokenPairResponse
-
-    other = ApiClient(api.client)
-    tokens: TokenPairResponse = other.signup("viewer_grade@example.com", "Strong-Pass-12345!")
-    other.set_access_token(tokens.access_token)
+    other = api.create_other_user("viewer_grade@example.com")
 
     created = api.create_assessment("Editor Guard Grading")
     api.set_question_set_yaml(created.id, QUESTION_SET_YAML)

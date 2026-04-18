@@ -16,11 +16,8 @@ pytest_plugins = [
 def test_env() -> Generator[None, None, None]:
     settings = get_settings()
 
-    # Security (deterministic values for tests)
-    settings.security.jwt_secret = "test-secret-for-gradeflow-at-least-32-bytes"
-    settings.security.jwt_algorithm = "HS256"
-    settings.security.jwt_issuer = "gradeflow-api"
-    settings.security.jwt_audience = "gradeflow-clients"
+    # Zitadel: provide a dummy client_id so startup validation passes
+    settings.zitadel.client_id = "test-client-id"
 
     # Executor: force synchronous, single worker, short timeouts for tests
     settings.executor.executor = "SYNCHRONOUS"
@@ -29,4 +26,3 @@ def test_env() -> Generator[None, None, None]:
     settings.executor.poll_interval_s = 0.1
 
     yield
-    # No teardown required; pytest will end the session

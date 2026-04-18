@@ -15,20 +15,14 @@ from gradeflow_backend.repositories.assessments import AssessmentRepository
 from gradeflow_backend.repositories.grading_jobs import GradingJobRepository
 from gradeflow_backend.repositories.memberships import MembershipRepository
 from gradeflow_backend.repositories.submissions import SubmissionRepository
-from gradeflow_backend.repositories.tokens import RefreshTokenRepository
 from gradeflow_backend.repositories.users import UserRepository
 from gradeflow_backend.services.assessments import AssessmentService
-from gradeflow_backend.services.auth import AuthService
 from gradeflow_backend.services.grading import GradingService
 from gradeflow_backend.services.jobs import JobsService
 from gradeflow_backend.services.memberships import MembershipService
 from gradeflow_backend.services.question_sets import QuestionSetService
 from gradeflow_backend.services.rubrics import RubricService
 from gradeflow_backend.services.submissions import SubmissionsService
-
-
-def get_auth_service(db: Session = Depends(get_session)) -> AuthService:
-    return AuthService(UserRepository(db), RefreshTokenRepository(db))
 
 
 def get_assessment_service(db: Session = Depends(get_session)) -> AssessmentService:

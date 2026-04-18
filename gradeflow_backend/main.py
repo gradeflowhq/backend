@@ -2,7 +2,6 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-import gradeflow_engine as gradeflow_engine
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -14,7 +13,6 @@ from gradeflow_backend.db import init_db
 from gradeflow_backend.openapi import patch_openapi_union_format
 from gradeflow_backend.routers import (
     assessments,
-    auth,
     grading,
     health,
     jobs,
@@ -23,6 +21,7 @@ from gradeflow_backend.routers import (
     registry,
     rubrics,
     submissions,
+    users,
 )
 from gradeflow_backend.schemas.errors import ErrorResponse
 from gradeflow_backend.services.exceptions import (
@@ -44,6 +43,18 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    # Validate required Zitadel config before accepting requests
+    cfg = settings.zitadel
+    if not cfg.client_id:
+        raise RuntimeError(
+            "ZITADEL__CLIENT_ID is not set — cannot validate tokens without an audience"
+        )
+    if cfg.authority in ("", "https://zitadel.cloud"):
+        logger.warning(
+            "ZITADEL__AUTHORITY is using the default value '%s' — "
+            "set it to your actual Zitadel instance URL for production",
+            cfg.authority,
+        )
     init_db()
     yield
 
@@ -112,9 +123,9 @@ app.include_router(submissions.router)
 app.include_router(question_sets.router)
 app.include_router(rubrics.router)
 app.include_router(grading.router)
-app.include_router(auth.router)
 app.include_router(memberships.router)
 app.include_router(jobs.router)
+app.include_router(users.router)
 
 
 # Install OpenAPI patcher

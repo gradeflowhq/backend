@@ -1,4 +1,3 @@
-from gradeflow_backend.schemas.auth import TokenPairResponse
 from tests.helpers.api import ApiClient
 from tests.helpers.data import QUESTION_SET_YAML, SUBMISSIONS_CSV
 
@@ -72,9 +71,7 @@ def test_submissions_answer_columns_filter(api: ApiClient) -> None:
 
 
 def test_upload_source_data_non_editor_forbidden(api: ApiClient) -> None:
-    other = ApiClient(api.client)
-    tokens: TokenPairResponse = other.signup("viewer_sub@example.com", "Strong-Pass-12345!")
-    other.set_access_token(tokens.access_token)
+    other = api.create_other_user("viewer_sub@example.com")
 
     created = api.create_assessment("Editor Guard")
     api.add_member(created.id, user_email="viewer_sub@example.com", role="viewer")

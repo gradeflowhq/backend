@@ -7,7 +7,7 @@ from gradeflow_backend.schemas.assessments import (
     AssessmentResponse,
     AssessmentsListResponse,
 )
-from gradeflow_backend.schemas.auth import MeResponse, TokenPairResponse
+from gradeflow_backend.schemas.auth import MeResponse
 from gradeflow_backend.schemas.grading import (
     GradingDownloadResponse,
     GradingJob,
@@ -30,6 +30,14 @@ from gradeflow_backend.schemas.users import AssessmentUsersResponse
 
 Headers: TypeAlias = dict[str, str]
 
+_user_counter = 0
+
+
+def _next_user_id() -> str:
+    global _user_counter
+    _user_counter += 1
+    return f"test-user-{_user_counter}"
+
 
 class ApiClient:
     def __init__(self, client: TestClient) -> None:
@@ -39,61 +47,35 @@ class ApiClient:
     def set_access_token(self, access_token: str) -> None:
         self._auth_header = {"Authorization": f"Bearer {access_token}"}
 
-    # -----------------
-    # Auth (try-variants)
-    # -----------------
+    def create_other_user(self, email: str, name: str | None = None) -> "ApiClient":
+        """
+        Create a secondary authenticated API client backed by a different test user.
+        Registers a new test identity in the auth override and syncs it to the DB
+        via /users/me.
+        """
+        from tests.fixtures.client import register_test_user
 
-    def try_signup(self, email: str, password: str, name: str | None = None) -> Response:
-        return self.client.post(
-            "/auth/signup",
-            json={"email": email, "password": password, "name": name},
-        )
+        sub = _next_user_id()
+        token = f"token-{sub}"
+        register_test_user(token, sub=sub, email=email, name=name)
+        other = ApiClient(self.client)
+        other.set_access_token(token)
+        # Hit /users/me to ensure the user row is created in the DB
+        other.me()
+        return other
 
-    def try_token(self, email: str, password: str) -> Response:
-        return self.client.post(
-            "/auth/token",
-            data={"username": email, "password": password},
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
-        )
+    # -----------------
+    # Users / Me
+    # -----------------
 
     def try_me(self, use_auth: bool = True) -> Response:
         headers = self._auth_header if use_auth else {}
-        return self.client.get("/auth/me", headers=headers)
+        return self.client.get("/users/me", headers=headers)
 
-    def try_refresh(self, refresh_token: str) -> Response:
-        return self.client.post(
-            "/auth/refresh",
-            json={"refresh_token": refresh_token},
-        )
-
-    def try_logout(self, access_token: str) -> Response:
-        return self.client.post(
-            "/auth/logout",
-            headers={"Authorization": f"Bearer {access_token}"},
-        )
-
-    def try_update_me(
-        self,
-        *,
-        name: str | None = None,
-        email: str | None = None,
-        current_password: str | None = None,
-        new_password: str | None = None,
-    ) -> Response:
-        payload: dict[str, object] = {}
-        if name is not None:
-            payload["name"] = name
-        if email is not None:
-            payload["email"] = email
-        if current_password is not None:
-            payload["current_password"] = current_password
-        if new_password is not None:
-            payload["new_password"] = new_password
-        return self.client.patch(
-            "/auth/me",
-            json=payload,
-            headers=self._auth_header,
-        )
+    def me(self) -> MeResponse:
+        r = self.try_me()
+        assert r.status_code == 200, r.text
+        return MeResponse.model_validate(r.json())
 
     # -----------------
     # Health and registry
@@ -107,23 +89,6 @@ class ApiClient:
 
     def try_get_registry_adapters(self, kind: str) -> Response:
         return self.client.get(f"/registry/adapters/{kind}")
-
-    # Auth (success-path delegates to try-)
-
-    def signup(self, email: str, password: str, name: str | None = None) -> TokenPairResponse:
-        r = self.try_signup(email=email, password=password, name=name)
-        assert r.status_code == 201, r.text
-        return TokenPairResponse.model_validate(r.json())
-
-    def token(self, email: str, password: str) -> TokenPairResponse:
-        r = self.try_token(email=email, password=password)
-        assert r.status_code == 200, r.text
-        return TokenPairResponse.model_validate(r.json())
-
-    def me(self) -> MeResponse:
-        r = self.try_me()
-        assert r.status_code == 200, r.text
-        return MeResponse.model_validate(r.json())
 
     # -----------------
     # Assessments (try-variants)

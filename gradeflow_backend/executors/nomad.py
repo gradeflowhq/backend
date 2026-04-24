@@ -151,11 +151,18 @@ class NomadJobExecutor(GradingJobExecutor):
         host = s.nomad_host or "127.0.0.1"
         port = s.nomad_port
         token = s.nomad_token or None
+        namespace = s.nomad_namespace or None
         verify_tls = s.nomad_verify_tls
         timeout_s = s.timeout_s
 
-        self._namespace = s.nomad_namespace or None
-        self._nomad = Nomad(host=host, port=port, token=token, verify=verify_tls, timeout=timeout_s)
+        self._nomad = Nomad(
+            host=host,
+            port=port,
+            token=token,
+            namespace=namespace,
+            verify=verify_tls,
+            timeout=timeout_s,
+        )
 
     def submit(self, spec: GradingJobSpec, callback_url: str) -> str:
         job_id = f"gf-{uuid.uuid4().hex}-{spec.type}"
@@ -171,19 +178,15 @@ class NomadJobExecutor(GradingJobExecutor):
             point_columns_json=json.dumps(render_point_columns_map(spec)),
         )
 
-        logger.info("Registering Nomad job", extra={"job_id": job_id, "namespace": self._namespace})
+        logger.info("Registering Nomad job", extra={"job_id": job_id})
 
-        jobs_api: Any = self._nomad.jobs
-        if self._namespace:
-            jobs_api.register_job(job, namespace=self._namespace)
-        else:
-            jobs_api.register_job(job)
+        self._nomad.jobs.register_job(job)
 
         return job_id
 
     def get_status(self, job_id: str) -> JobStatus:
         try:
-            job = cast(dict[str, Any], self._nomad.job.get_job(job_id, namespace=self._namespace))
+            job = cast(dict[str, Any], self._nomad.job.get_job(job_id))
         except nomad.api.exceptions.URLNotFoundNomadException as e:
             logger.error("Nomad job not found", extra={"job_id": job_id})
             raise JobNotFoundError(f"Job not found: {job_id}") from e
@@ -201,7 +204,7 @@ class NomadJobExecutor(GradingJobExecutor):
 
         allocations = cast(
             list[dict[str, Any]],
-            self._nomad.job.get_allocations(job_id, namespace=self._namespace),
+            self._nomad.job.get_allocations(job_id),
         )
         if not allocations:
             logger.warning("Nomad job dead with no allocations", extra={"job_id": job_id})
@@ -215,7 +218,7 @@ class NomadJobExecutor(GradingJobExecutor):
         try:
             allocations = cast(
                 list[dict[str, Any]],
-                self._nomad.job.get_allocations(job_id, namespace=self._namespace),
+                self._nomad.job.get_allocations(job_id),
             )
         except nomad.api.exceptions.URLNotFoundNomadException as e:
             logger.error("Nomad job not found", extra={"job_id": job_id})
@@ -248,11 +251,7 @@ class NomadJobExecutor(GradingJobExecutor):
 
     def cancel(self, job_id: str) -> None:
         try:
-            jobs_api: Any = self._nomad.jobs
-            if self._namespace:
-                jobs_api.deregister_job(job_id, namespace=self._namespace)
-            else:
-                jobs_api.deregister_job(job_id)
+            self._nomad.jobs.deregister_job(job_id)
             logger.info("Cancelled Nomad job", extra={"job_id": job_id})
         except nomad.api.exceptions.URLNotFoundNomadException as e:
             from gradeflow_backend.executors.exceptions import JobNotFoundError

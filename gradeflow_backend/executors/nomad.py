@@ -21,6 +21,7 @@ from gradeflow_backend.utils.renderers import (
 
 logger = logging.getLogger(__name__)
 
+JOB_PREFIX = "gradeflow"
 DEFAULT_WORKDIR = "/workspace"
 DEFAULT_IMAGE = "gradeflow-engine:latest"
 DEFAULT_ENGINE_BIN = "gradeflow-engine"
@@ -165,7 +166,7 @@ class NomadJobExecutor(GradingJobExecutor):
         )
 
     def submit(self, spec: GradingJobSpec, callback_url: str) -> str:
-        job_id = f"gf-{uuid.uuid4().hex}-{spec.type}"
+        job_id = f"{JOB_PREFIX}-{uuid.uuid4().hex}-{spec.type}"
 
         job = _build_nomad_job(
             job_id,

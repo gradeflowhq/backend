@@ -82,6 +82,11 @@ def test_download_grading_no_results(api: ApiClient) -> None:
 
     r = api.try_download_grading(created.id)
     assert r.status_code == 400, r.text
+    assert r.json() == {
+        "code": "BAD_REQUEST",
+        "message": "No graded results to download. Run grading first.",
+        "errors": ["No graded results to download. Run grading first."],
+    }
 
 
 def test_bulk_adjust_all_valid(api: ApiClient) -> None:

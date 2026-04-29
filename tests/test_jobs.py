@@ -32,6 +32,20 @@ class _FailingExecutor(GradingJobExecutor):
         return
 
 
+class _SubmitFailingExecutor(GradingJobExecutor):
+    def submit(self, spec: GradingJobSpec, callback_url: str) -> str:
+        raise ConnectionError("Nomad is unavailable")
+
+    def get_status(self, job_id: str) -> JobStatus:
+        raise JobNotFoundError(f"Job not found: {job_id}")
+
+    def start(self) -> None:
+        return
+
+    def stop(self) -> None:
+        return
+
+
 def test_job_status_includes_failure_error(
     api: ApiClient,
     monkeypatch: pytest.MonkeyPatch,
@@ -50,3 +64,29 @@ def test_job_status_includes_failure_error(
 
     assert status.status == "failed"
     assert status.error == error_message
+
+
+def test_job_submission_executor_failure_returns_structured_503(
+    api: ApiClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "gradeflow_backend.services.jobs.get_executor",
+        lambda: _SubmitFailingExecutor(),
+    )
+
+    created = api.create_assessment("Executor Unavailable")
+    api.set_question_set_yaml(created.id, QUESTION_SET_YAML)
+    api.set_rubric_yaml(created.id, RUBRIC_YAML)
+    api.set_submissions_csv(created.id, SUBMISSIONS_CSV)
+
+    response = api.try_run_grading(created.id)
+
+    assert response.status_code == 503, response.text
+    body = response.json()
+    assert body["code"] == "SERVICE_UNAVAILABLE"
+    assert body["message"] == (
+        "Unable to start grading job. The grading executor is unavailable "
+        "or failed to accept the job."
+    )
+    assert body["errors"] == [body["message"]]

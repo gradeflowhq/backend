@@ -1,3 +1,5 @@
+import logging
+
 import valkey
 import yaml
 from fastapi import Request
@@ -16,8 +18,15 @@ from gradeflow_backend.schemas.grading import (
     GradingJobSpec,
     JobStatusResponse,
 )
-from gradeflow_backend.services.exceptions import BadRequestError, NotFoundError
+from gradeflow_backend.services.exceptions import (
+    AppError,
+    BadRequestError,
+    NotFoundError,
+    ServiceUnavailableError,
+)
 from gradeflow_backend.utils.jobs import build_callback_url, build_grading_job
+
+logger = logging.getLogger(__name__)
 
 
 class JobsService:
@@ -60,7 +69,17 @@ class JobsService:
             self.db.commit()
 
             # Enqueue job
-            job_id = self.executor.submit(spec, callback_url=callback_url)
+            try:
+                job_id = self.executor.submit(spec, callback_url=callback_url)
+            except Exception as e:
+                logger.exception(
+                    "Executor failed to submit grading job",
+                    extra={"assessment_id": spec.assessment_id, "job_type": spec.type},
+                )
+                raise ServiceUnavailableError(
+                    "Unable to start grading job. The grading executor is unavailable "
+                    "or failed to accept the job."
+                ) from e
 
             # Persist job_id
             self.grading_jobs.create(spec.assessment_id, spec.type, job_id)
@@ -69,6 +88,9 @@ class JobsService:
             self.db.commit()
 
             return build_grading_job(request, job_id)
+        except AppError:
+            self.db.rollback()
+            raise
         except Exception:
             self.db.rollback()
             raise
@@ -80,6 +102,12 @@ class JobsService:
             return JobStatusResponse(job_id=job_id, status=status, error=error)
         except JobNotFoundError as e:
             raise NotFoundError("Job not found") from e
+        except Exception as e:
+            logger.exception("Executor failed to read job status", extra={"job_id": job_id})
+            raise ServiceUnavailableError(
+                "Unable to read grading job status. The grading executor is unavailable "
+                "or returned an unexpected response."
+            ) from e
 
     def cancel_job(self, job_id: str) -> None:
         """Cancel a running or queued job by job_id."""
@@ -87,6 +115,12 @@ class JobsService:
             self.executor.cancel(job_id)
         except JobNotFoundError as e:
             raise NotFoundError("Job not found") from e
+        except Exception as e:
+            logger.exception("Executor failed to cancel job", extra={"job_id": job_id})
+            raise ServiceUnavailableError(
+                "Unable to cancel grading job. The grading executor is unavailable "
+                "or failed to cancel the job."
+            ) from e
 
     def on_callback(self, token: str, result: GradingJobResult) -> None:
         """

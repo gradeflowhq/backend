@@ -252,7 +252,7 @@ class NomadJobExecutor(GradingJobExecutor):
 
     def cancel(self, job_id: str) -> None:
         try:
-            self._nomad.jobs.deregister_job(job_id)
+            self._nomad.job.deregister_job(job_id)
             logger.info("Cancelled Nomad job", extra={"job_id": job_id})
         except nomad.api.exceptions.URLNotFoundNomadException as e:
             from gradeflow_backend.executors.exceptions import JobNotFoundError

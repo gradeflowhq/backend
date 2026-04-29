@@ -131,3 +131,16 @@ def test_rubric_status_clears_after_question_set_change_is_acknowledged(api: Api
 
     refreshed = api.set_rubric_yaml(created.id, RUBRIC_YAML)
     assert refreshed.status.is_stale is False
+
+
+def test_rubric_export(api: ApiClient) -> None:
+    created = api.create_assessment("Rubric Export")
+    api.set_question_set_yaml(created.id, QUESTION_SET_YAML)
+    api.set_rubric_yaml(created.id, RUBRIC_YAML)
+
+    exported = api.export_rubric(created.id)
+
+    assert exported.extension == "yaml"
+    assert exported.media_type
+    assert exported.filename == "rubric-export-rules.yaml"
+    assert b"rules:" in exported.data

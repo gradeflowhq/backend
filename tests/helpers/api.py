@@ -16,12 +16,14 @@ from gradeflow_backend.schemas.grading import (
 )
 from gradeflow_backend.schemas.memberships import MembershipResponse
 from gradeflow_backend.schemas.question_sets import (
+    ExportQuestionSetResponse,
     ParseSubmissionsResponse,
     QuestionSetResponse,
 )
 from gradeflow_backend.schemas.roles import Role
 from gradeflow_backend.schemas.rubrics import (
     CoverageResponse,
+    ExportRubricResponse,
     RubricResponse,
     ValidateRubricResponse,
 )
@@ -193,6 +195,13 @@ class ApiClient:
             headers=self._auth_header,
         )
 
+    def try_export_question_set(self, assessment_id: str) -> Response:
+        return self.client.post(
+            f"/assessments/{assessment_id}/question-set/export",
+            json={"serializer": {"format": "yaml"}},
+            headers=self._auth_header,
+        )
+
     # Question sets (success-path delegates to try-)
 
     def set_question_set_yaml(self, assessment_id: str, yaml_str: str) -> QuestionSetResponse:
@@ -220,6 +229,11 @@ class ApiClient:
         r = self.try_parse_submissions(assessment_id=assessment_id)
         assert r.status_code == 200, r.text
         return ParseSubmissionsResponse.model_validate(r.json())
+
+    def export_question_set(self, assessment_id: str) -> ExportQuestionSetResponse:
+        r = self.try_export_question_set(assessment_id=assessment_id)
+        assert r.status_code == 200, r.text
+        return ExportQuestionSetResponse.model_validate(r.json())
 
     # -----------------
     # Rubrics (try-variants)
@@ -261,6 +275,13 @@ class ApiClient:
             headers=self._auth_header,
         )
 
+    def try_export_rubric(self, assessment_id: str) -> Response:
+        return self.client.post(
+            f"/assessments/{assessment_id}/rubric/export",
+            json={"serializer": {"format": "yaml"}},
+            headers=self._auth_header,
+        )
+
     # Rubrics (success-path delegates to try-)
 
     def set_rubric_yaml(self, assessment_id: str, yaml_str: str) -> RubricResponse:
@@ -292,6 +313,11 @@ class ApiClient:
     def delete_rubric(self, assessment_id: str) -> None:
         r = self.try_delete_rubric(assessment_id=assessment_id)
         assert r.status_code == 204, r.text
+
+    def export_rubric(self, assessment_id: str) -> ExportRubricResponse:
+        r = self.try_export_rubric(assessment_id=assessment_id)
+        assert r.status_code == 200, r.text
+        return ExportRubricResponse.model_validate(r.json())
 
     # -----------------
     # Rubrics Coverage (try-variants)

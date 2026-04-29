@@ -14,7 +14,8 @@ from gradeflow_backend.openapi import convert_primitive_anyof_merge_equal_or_abs
 from gradeflow_backend.schemas.assessments import AssessmentResponse
 from gradeflow_backend.schemas.auth import MeResponse
 from gradeflow_backend.schemas.grading import GradingDownloadRequest
-from gradeflow_backend.schemas.rubrics import RubricResponse
+from gradeflow_backend.schemas.question_sets import ExportQuestionSetRequest
+from gradeflow_backend.schemas.rubrics import ExportRubricRequest, RubricResponse
 from gradeflow_backend.schemas.submissions import SubmissionsResponse
 
 # -----------------------
@@ -298,7 +299,7 @@ def test_patcher_preserves_discriminated_unions_where_used() -> None:
 
 def test_other_backend_response_shapes() -> None:
     """
-    Exercise RubricResponse, SubmissionsResponse, and GradingDownloadRequest.
+    Exercise RubricResponse, SubmissionsResponse, and export/download request schemas.
     Validate patcher doesn't alter non-primitive unions.
     """
     openapi: OpenAPI = _client_openapi()
@@ -320,4 +321,20 @@ def test_other_backend_response_shapes() -> None:
         serializer_prop.get("type") == "object"
         or "oneOf" in serializer_prop
         or "anyOf" in serializer_prop
+    )
+
+    qer_schema: SchemaDict = _get_schema(openapi, ExportQuestionSetRequest)
+    q_serializer_prop: SchemaDict = _get_prop_schema(openapi, qer_schema, "serializer")
+    assert (
+        q_serializer_prop.get("type") == "object"
+        or "oneOf" in q_serializer_prop
+        or "anyOf" in q_serializer_prop
+    )
+
+    rer_schema: SchemaDict = _get_schema(openapi, ExportRubricRequest)
+    r_serializer_prop: SchemaDict = _get_prop_schema(openapi, rer_schema, "serializer")
+    assert (
+        r_serializer_prop.get("type") == "object"
+        or "oneOf" in r_serializer_prop
+        or "anyOf" in r_serializer_prop
     )

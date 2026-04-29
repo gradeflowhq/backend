@@ -5,6 +5,8 @@ from gradeflow_backend.dependencies.services import get_rubric_service
 from gradeflow_backend.schemas.rubrics import (
     CoverageRequest,
     CoverageResponse,
+    ExportRubricRequest,
+    ExportRubricResponse,
     ImportRubricRequest,
     LoadRubricRequest,
     RubricResponse,
@@ -24,6 +26,16 @@ def get_rubric(
     _u: str = Depends(member_guard_factory()),
 ) -> RubricResponse:
     return svc.get(assessment_id)
+
+
+@router.post("/export", response_model=ExportRubricResponse, status_code=status.HTTP_200_OK)
+def export_rubric(
+    assessment_id: str,
+    req: ExportRubricRequest,
+    svc: RubricService = Depends(get_rubric_service),
+    _u: str = Depends(member_guard_factory()),
+) -> ExportRubricResponse:
+    return svc.export(assessment_id, req)
 
 
 @router.put("", response_model=RubricResponse, status_code=status.HTTP_200_OK)

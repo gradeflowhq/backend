@@ -3,6 +3,8 @@ from fastapi import APIRouter, Depends, status
 from gradeflow_backend.dependencies.memberships import member_guard_factory, role_guard_factory
 from gradeflow_backend.dependencies.services import get_question_set_service
 from gradeflow_backend.schemas.question_sets import (
+    ExportQuestionSetRequest,
+    ExportQuestionSetResponse,
     ImportQuestionSetRequest,
     InferQuestionSetRequest,
     LoadQuestionSetRequest,
@@ -23,6 +25,16 @@ def get_question_set(
     _u: str = Depends(member_guard_factory()),
 ) -> QuestionSetResponse:
     return svc.get(assessment_id)
+
+
+@router.post("/export", response_model=ExportQuestionSetResponse, status_code=status.HTTP_200_OK)
+def export_question_set(
+    assessment_id: str,
+    req: ExportQuestionSetRequest,
+    svc: QuestionSetService = Depends(get_question_set_service),
+    _u: str = Depends(member_guard_factory()),
+) -> ExportQuestionSetResponse:
+    return svc.export(assessment_id, req)
 
 
 @router.put("", response_model=QuestionSetResponse, status_code=status.HTTP_200_OK)

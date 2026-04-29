@@ -3,11 +3,10 @@ from __future__ import annotations
 import csv
 from io import StringIO
 
-import yaml
+from gradeflow_engine.core import dump_question_set_to_blob, dump_rubric_to_blob
 from natsort import natsorted
 
 from gradeflow_backend.schemas.grading import GradingJobSpec
-from gradeflow_backend.utils.engine import model_dump_minimal
 
 _POINT_COL_PREFIX = "__pts_"
 
@@ -55,14 +54,14 @@ def render_submissions_csv(spec: GradingJobSpec) -> str:
 
 def render_question_set_yaml(spec: GradingJobSpec) -> str:
     """
-    YAML dump of QuestionSet using model_dump (no internal fields added).
+    YAML dump of QuestionSet via the engine serializer.
     """
-    return yaml.safe_dump(spec.question_set.model_dump(), sort_keys=False)
+    return dump_question_set_to_blob(spec.question_set, serializer_name="yaml").data.decode("utf-8")
 
 
 def render_rubric_yaml_minimal(spec: GradingJobSpec) -> str:
     """
-    Minimal YAML dump of Rubric, stripping engine-internal fields via model_dump_minimal.
-    Matches how RubricService/JobsService persist rubrics for engine consumption.
+    Minimal YAML dump of Rubric via the engine serializer.
+    Matches how RubricService and executor job payloads persist rubrics for engine consumption.
     """
-    return yaml.safe_dump(model_dump_minimal(spec.rubric), sort_keys=False)
+    return dump_rubric_to_blob(spec.rubric, serializer_name="yaml").data.decode("utf-8")

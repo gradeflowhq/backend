@@ -1,5 +1,8 @@
-import yaml
-from gradeflow_engine.core import load_rubric_from_blob, load_rubric_via_adapter
+from gradeflow_engine.core import (
+    dump_rubric_to_blob,
+    load_rubric_from_blob,
+    load_rubric_via_adapter,
+)
 from gradeflow_engine.rubrics.model import Rubric
 
 from gradeflow_backend.models.assessment import Assessment
@@ -7,6 +10,8 @@ from gradeflow_backend.repositories.assessments import AssessmentRepository
 from gradeflow_backend.schemas.rubrics import (
     CoverageRequest,
     CoverageResponse,
+    ExportRubricRequest,
+    ExportRubricResponse,
     ImportRubricRequest,
     LoadRubricRequest,
     RubricResponse,
@@ -15,7 +20,7 @@ from gradeflow_backend.schemas.rubrics import (
     ValidateRubricResponse,
 )
 from gradeflow_backend.services.base import BaseService
-from gradeflow_backend.utils.engine import model_dump_minimal
+from gradeflow_backend.utils.filenames import make_safe_export_basename
 from gradeflow_backend.utils.io import blob_from_str, source_from_data
 from gradeflow_backend.utils.loaders import load_question_set, load_rubric
 from gradeflow_backend.utils.resolvers import resolve_or_require
@@ -58,6 +63,22 @@ class RubricService(BaseService):
         a = self._get_or_404(assessment_id)
         return self._respond(a, load_rubric(a))
 
+    def export(self, assessment_id: str, req: ExportRubricRequest) -> ExportRubricResponse:
+        a = self._get_or_404(assessment_id)
+        rubric = load_rubric(a)
+        blob = dump_rubric_to_blob(
+            rubric,
+            serializer_name=req.serializer.format,
+            serializer_kwargs=req.serializer.model_dump(exclude={"format"}),
+        )
+        safe_name = make_safe_export_basename(a.name)
+        return ExportRubricResponse(
+            filename=f"{safe_name}-rules.{blob.extension}",
+            data=blob.data,
+            extension=blob.extension,
+            media_type=blob.media_type,
+        )
+
     def delete(self, assessment_id: str) -> None:
         self._get_or_404(assessment_id)
         self.repo.set_rubric_yaml(assessment_id, None)
@@ -99,7 +120,8 @@ class RubricService(BaseService):
     # ------------------------------------------------------------------
 
     def _store_and_respond(self, assessment_id: str, rubric: Rubric) -> RubricResponse:
-        self.repo.set_rubric_yaml(assessment_id, yaml.safe_dump(model_dump_minimal(rubric)))
+        blob = dump_rubric_to_blob(rubric, serializer_name="yaml")
+        self.repo.set_rubric_yaml(assessment_id, blob.data.decode("utf-8"))
         return self._respond(self._get_or_404(assessment_id), rubric)
 
     def _respond(self, a: Assessment, rubric: Rubric) -> RubricResponse:

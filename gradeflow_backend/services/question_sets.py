@@ -8,6 +8,8 @@ from gradeflow_engine.question_sets.model import QuestionSet
 
 from gradeflow_backend.repositories.assessments import AssessmentRepository
 from gradeflow_backend.schemas.question_sets import (
+    ExportQuestionSetRequest,
+    ExportQuestionSetResponse,
     ImportQuestionSetRequest,
     InferQuestionSetRequest,
     LoadQuestionSetRequest,
@@ -19,6 +21,7 @@ from gradeflow_backend.schemas.question_sets import (
 from gradeflow_backend.services.base import BaseService
 from gradeflow_backend.services.exceptions import BadRequestError
 from gradeflow_backend.services.submissions import derive_raw_submissions
+from gradeflow_backend.utils.filenames import make_safe_export_basename
 from gradeflow_backend.utils.io import blob_from_str, source_from_data
 from gradeflow_backend.utils.loaders import load_question_set
 from gradeflow_backend.utils.resolvers import resolve_or_require
@@ -66,6 +69,24 @@ class QuestionSetService(BaseService):
         return QuestionSetResponse(
             question_set=load_question_set(a),
             status=question_set_status(a),
+        )
+
+    def export(
+        self, assessment_id: str, req: ExportQuestionSetRequest
+    ) -> ExportQuestionSetResponse:
+        a = self._get_or_404(assessment_id)
+        question_set = load_question_set(a)
+        blob = dump_question_set_to_blob(
+            question_set,
+            serializer_name=req.serializer.format,
+            serializer_kwargs=req.serializer.model_dump(exclude={"format"}),
+        )
+        safe_name = make_safe_export_basename(a.name)
+        return ExportQuestionSetResponse(
+            filename=f"{safe_name}-questions.{blob.extension}",
+            data=blob.data,
+            extension=blob.extension,
+            media_type=blob.media_type,
         )
 
     def delete(self, assessment_id: str) -> None:

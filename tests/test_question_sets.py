@@ -60,3 +60,15 @@ def test_question_set_status_clears_after_resave(api: ApiClient) -> None:
 
     refreshed = api.set_question_set_yaml(created.id, QUESTION_SET_YAML)
     assert refreshed.status.is_stale is False
+
+
+def test_question_set_export(api: ApiClient) -> None:
+    created = api.create_assessment("Question Set Export")
+    api.set_question_set_yaml(created.id, QUESTION_SET_YAML)
+
+    exported = api.export_question_set(created.id)
+
+    assert exported.extension == "yaml"
+    assert exported.media_type
+    assert exported.filename == "question-set-export-questions.yaml"
+    assert b"question_map:" in exported.data

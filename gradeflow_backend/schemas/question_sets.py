@@ -31,6 +31,17 @@ class QuestionSetResponse(BaseModel):
     status: SectionStatus
 
 
+class ExportQuestionSetRequest(BaseModel):
+    serializer: QuestionSetSerializerConfig
+
+
+class ExportQuestionSetResponse(BaseModel):
+    filename: str
+    data: bytes
+    extension: str
+    media_type: str
+
+
 class InferQuestionSetRequest(BaseModel):
     use_stored_submissions: bool = True
     raw_submissions: list[RawSubmission] | None = None

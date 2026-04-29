@@ -27,6 +27,17 @@ class RubricResponse(BaseModel):
     status: SectionStatus
 
 
+class ExportRubricRequest(BaseModel):
+    serializer: RubricSerializerConfig
+
+
+class ExportRubricResponse(BaseModel):
+    filename: str
+    data: bytes
+    extension: str
+    media_type: str
+
+
 class ValidateRubricRequest(BaseModel):
     use_stored_rubric: bool = True
     use_stored_question_set: bool = True

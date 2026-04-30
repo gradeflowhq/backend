@@ -1,12 +1,15 @@
+from typing import Any
+
 from gradeflow_engine.core import (
     dump_rubric_to_blob,
     load_rubric_from_blob,
     load_rubric_via_adapter,
 )
+from gradeflow_engine.io.sources import DataSource
 from gradeflow_engine.rubrics.model import Rubric
+from gradeflow_engine.serializations.base import DataBlob
 
 from gradeflow_backend.models.assessment import Assessment
-from gradeflow_backend.repositories.assessments import AssessmentRepository
 from gradeflow_backend.schemas.rubrics import (
     CoverageRequest,
     CoverageResponse,
@@ -19,69 +22,35 @@ from gradeflow_backend.schemas.rubrics import (
     ValidateRubricRequest,
     ValidateRubricResponse,
 )
-from gradeflow_backend.services.base import BaseService
+from gradeflow_backend.services.yaml_artifacts import YamlArtifactService
 from gradeflow_backend.utils.filenames import make_safe_export_basename
-from gradeflow_backend.utils.io import blob_from_str, source_from_data
 from gradeflow_backend.utils.loaders import load_question_set, load_rubric
 from gradeflow_backend.utils.resolvers import resolve_or_require
 from gradeflow_backend.utils.staleness import rubric_status
 
 
-class RubricService(BaseService):
-    def __init__(self, repo: AssessmentRepository) -> None:
-        super().__init__(repo)
-
+class RubricService(YamlArtifactService[Rubric, RubricResponse, ExportRubricResponse]):
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
     def set_by_model(self, assessment_id: str, req: SetRubricByModelRequest) -> RubricResponse:
-        self._get_or_404(assessment_id)
-        return self._store_and_respond(assessment_id, req.rubric)
+        return self._set_by_model(assessment_id, req.rubric)
 
     def set_by_data(self, assessment_id: str, req: LoadRubricRequest) -> RubricResponse:
-        rubric = load_rubric_from_blob(
-            blob_from_str(
-                req.data,
-                media_type="application/octet-stream",
-                ext=req.serializer.format,
-            ),
-            serializer_name=req.serializer.format,
-            serializer_kwargs=req.serializer.model_dump(exclude={"format"}),
-        )
-        return self._store_and_respond(assessment_id, rubric)
+        return self._set_by_data(assessment_id, req.data, req.serializer)
 
     def set_by_adapter(self, assessment_id: str, req: ImportRubricRequest) -> RubricResponse:
-        rubric = load_rubric_via_adapter(
-            source_from_data(req.data),
-            adapter_name=req.adapter.name,
-            adapter_kwargs=req.adapter.model_dump(exclude={"name"}),
-        )
-        return self._store_and_respond(assessment_id, rubric)
+        return self._set_by_adapter(assessment_id, req.data, req.adapter)
 
     def get(self, assessment_id: str) -> RubricResponse:
-        a = self._get_or_404(assessment_id)
-        return self._respond(a, load_rubric(a))
+        return self._get_response(assessment_id)
 
     def export(self, assessment_id: str, req: ExportRubricRequest) -> ExportRubricResponse:
-        a = self._get_or_404(assessment_id)
-        rubric = load_rubric(a)
-        blob = dump_rubric_to_blob(
-            rubric,
-            serializer_name=req.serializer.format,
-            serializer_kwargs=req.serializer.model_dump(exclude={"format"}),
-        )
-        safe_name = make_safe_export_basename(a.name)
-        return ExportRubricResponse(
-            filename=f"{safe_name}-rules.{blob.extension}",
-            data=blob.data,
-            extension=blob.extension,
-            media_type=blob.media_type,
-        )
+        return self._export_artifact(assessment_id, req.serializer)
 
     def delete(self, assessment_id: str) -> None:
-        self._get_or_404(assessment_id)
-        self.repo.set_rubric_yaml(assessment_id, None)
+        self._delete_artifact(assessment_id)
 
     def validate(self, assessment_id: str, req: ValidateRubricRequest) -> ValidateRubricResponse:
         a = self._get_or_404(assessment_id)
@@ -119,10 +88,63 @@ class RubricService(BaseService):
     # Private helpers
     # ------------------------------------------------------------------
 
-    def _store_and_respond(self, assessment_id: str, rubric: Rubric) -> RubricResponse:
-        blob = dump_rubric_to_blob(rubric, serializer_name="yaml")
-        self.repo.set_rubric_yaml(assessment_id, blob.data.decode("utf-8"))
-        return self._respond(self._get_or_404(assessment_id), rubric)
+    def _load_from_blob(
+        self,
+        blob: DataBlob,
+        *,
+        serializer_name: str,
+        serializer_kwargs: dict[str, Any] | None = None,
+    ) -> Rubric:
+        return load_rubric_from_blob(
+            blob,
+            serializer_name=serializer_name,
+            serializer_kwargs=serializer_kwargs,
+        )
 
-    def _respond(self, a: Assessment, rubric: Rubric) -> RubricResponse:
-        return RubricResponse(rubric=rubric, status=rubric_status(a))
+    def _load_via_adapter(
+        self,
+        source: DataSource,
+        *,
+        adapter_name: str,
+        adapter_kwargs: dict[str, Any] | None = None,
+    ) -> Rubric:
+        return load_rubric_via_adapter(
+            source,
+            adapter_name=adapter_name,
+            adapter_kwargs=adapter_kwargs,
+        )
+
+    def _load_stored(self, assessment: Assessment) -> Rubric:
+        return load_rubric(assessment)
+
+    def _dump_to_blob(
+        self,
+        artifact: Rubric,
+        *,
+        serializer_name: str,
+        serializer_kwargs: dict[str, Any] | None = None,
+    ) -> DataBlob:
+        return dump_rubric_to_blob(
+            artifact,
+            serializer_name=serializer_name,
+            serializer_kwargs=serializer_kwargs,
+        )
+
+    def _store_yaml(self, assessment_id: str, yaml_str: str | None) -> None:
+        self.repo.set_rubric_yaml(assessment_id, yaml_str)
+
+    def _build_response(self, assessment: Assessment, artifact: Rubric) -> RubricResponse:
+        return RubricResponse(rubric=artifact, status=rubric_status(assessment))
+
+    def _build_export_response(
+        self,
+        assessment: Assessment,
+        blob: DataBlob,
+    ) -> ExportRubricResponse:
+        safe_name = make_safe_export_basename(assessment.name)
+        return ExportRubricResponse(
+            filename=f"{safe_name}-rules.{blob.extension}",
+            data=blob.data,
+            extension=blob.extension,
+            media_type=blob.media_type,
+        )

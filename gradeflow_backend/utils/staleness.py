@@ -1,4 +1,5 @@
 from datetime import datetime
+from functools import lru_cache
 
 import yaml
 
@@ -14,6 +15,7 @@ def _make_status(updated_at: datetime | None, *, is_stale: bool) -> SectionStatu
     )
 
 
+@lru_cache(maxsize=256)
 def _rubric_has_no_rules(rubric_yaml: str) -> bool:
     try:
         parsed = yaml.safe_load(rubric_yaml)

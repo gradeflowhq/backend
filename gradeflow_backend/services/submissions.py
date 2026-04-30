@@ -1,5 +1,6 @@
 import csv
 from io import StringIO
+from typing import Any
 
 import yaml
 from gradeflow_engine.core import load_raw_submissions_via_adapter
@@ -27,7 +28,7 @@ def derive_raw_submissions(assessment: Assessment) -> list[RawSubmission]:
         if assessment.submissions_config_yaml
         else {}
     )
-    adapter_kwargs: dict[str, object] = {
+    adapter_kwargs: dict[str, Any] = {
         "format": "csv",
         "student_id_column": assessment.source_student_id_column or "student_id",
     }

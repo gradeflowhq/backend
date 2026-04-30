@@ -1,6 +1,10 @@
 from fastapi import APIRouter, Depends, Request, status
 
 from gradeflow_backend.dependencies.memberships import member_guard_factory, role_guard_factory
+from gradeflow_backend.dependencies.rate_limit import (
+    enforce_grading_preview_rate_limit,
+    enforce_grading_run_rate_limit,
+)
 from gradeflow_backend.dependencies.services import get_grading_service, get_jobs_service
 from gradeflow_backend.schemas.grading import (
     BulkGradeAdjustmentRequest,
@@ -53,6 +57,7 @@ def run_grading(
     assessment_id: str,
     req: GradingRunRequest,
     request: Request,
+    _rate_limit: None = Depends(enforce_grading_run_rate_limit),
     svc: GradingService = Depends(get_grading_service),
     jobs: JobsService = Depends(get_jobs_service),
     _u: str = Depends(role_guard_factory("editor")),
@@ -108,6 +113,7 @@ def run_grading_preview(
     assessment_id: str,
     req: GradingPreviewRequest,
     request: Request,
+    _rate_limit: None = Depends(enforce_grading_preview_rate_limit),
     svc: GradingService = Depends(get_grading_service),
     jobs: JobsService = Depends(get_jobs_service),
     _u: str = Depends(member_guard_factory()),

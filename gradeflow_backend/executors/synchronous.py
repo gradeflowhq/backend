@@ -10,6 +10,7 @@ from gradeflow_backend.executors.exceptions import JobNotFoundError
 from gradeflow_backend.executors.registry import register
 from gradeflow_backend.schemas.grading import GradingJobResult, GradingJobSpec, JobStatus
 from gradeflow_backend.services.exceptions import RubricValidationError
+from gradeflow_backend.utils.callback_signing import dump_callback_payload, sign_callback_payload
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +20,7 @@ class SynchronousJobExecutor(GradingJobExecutor):
         self._status: dict[str, JobStatus] = {}
         self._errors: dict[str, str | None] = {}
 
-    def submit(self, spec: GradingJobSpec, callback_url: str) -> str:
+    def submit(self, spec: GradingJobSpec, callback_url: str, callback_secret: str) -> str:
         job_id = f"job-{uuid.uuid4().hex}-{spec.type}"
         self._status[job_id] = "running"
         self._errors[job_id] = None
@@ -57,7 +58,16 @@ class SynchronousJobExecutor(GradingJobExecutor):
             # Post callback
             timeout_s = get_settings().executor.callback_timeout_s
             logger.info("Posting callback", extra={"job_id": job_id, "timeout_s": timeout_s})
-            resp = httpx.post(callback_url, json=result.model_dump(mode="json"), timeout=timeout_s)
+            payload = dump_callback_payload(result)
+            resp = httpx.post(
+                callback_url,
+                content=payload,
+                timeout=timeout_s,
+                headers={
+                    "Content-Type": "application/json",
+                    "X-GradeFlow-Signature": sign_callback_payload(callback_secret, payload),
+                },
+            )
             logger.info(
                 "Callback response", extra={"job_id": job_id, "status_code": resp.status_code}
             )

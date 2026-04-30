@@ -4,6 +4,7 @@ from pathlib import Path
 
 from gradeflow_backend.config import get_settings
 from gradeflow_backend.executors.base import GradingJobExecutor
+from gradeflow_backend.executors.env import build_gradeflow_env
 from gradeflow_backend.executors.inmemory_base import InMemoryBaseJobExecutor
 from gradeflow_backend.executors.registry import register
 
@@ -71,6 +72,7 @@ class InMemoryContainerJobExecutor(InMemoryBaseJobExecutor):
         entrypoint_py: Path,  # staged on host; container reads mounted copy
         out_path: Path,
         callback_url: str,
+        callback_secret: str,
         assessment_id: str,
         job_type: str,
         point_columns_json: str = "{}",
@@ -91,38 +93,26 @@ class InMemoryContainerJobExecutor(InMemoryBaseJobExecutor):
             in_container_workdir=self._container_workdir,
         )
 
-        # Inject environment via -e flags
+        gradeflow_env = build_gradeflow_env(
+            assessment_id=assessment_id,
+            job_type=job_type,
+            callback_url=callback_url,
+            callback_secret=callback_secret,
+            engine_bin=engine_bin,
+            workdir=self._container_workdir,
+            submissions_path=f"{self._container_workdir}/submissions.csv",
+            qset_path=f"{self._container_workdir}/question_set.yaml",
+            rubric_path=f"{self._container_workdir}/rubric.yaml",
+            out_path=f"{self._container_workdir}/graded.yaml",
+            timeout_s=self._timeout_s,
+            callback_timeout_s=self._callback_timeout_s,
+            point_columns_json=point_columns_json,
+            remove_adjustments=remove_adjustments,
+            override_results=override_results,
+            grade_questions_without_rule=grade_questions_without_rule,
+        )
         env_flags = [
-            "-e",
-            f"GRADEFLOW_ASSESSMENT_ID={assessment_id}",
-            "-e",
-            f"GRADEFLOW_JOB_TYPE={job_type}",
-            "-e",
-            f"GRADEFLOW_WORKDIR={self._container_workdir}",
-            "-e",
-            f"GRADEFLOW_CALLBACK_URL={callback_url}",
-            "-e",
-            f"GRADEFLOW_TIMEOUT_S={self._timeout_s}",
-            "-e",
-            f"GRADEFLOW_CALLBACK_TIMEOUT_S={self._callback_timeout_s}",
-            "-e",
-            f"GRADEFLOW_ENGINE_BIN={engine_bin}",
-            "-e",
-            f"GRADEFLOW_SUBMISSIONS_PATH={self._container_workdir}/submissions.csv",
-            "-e",
-            f"GRADEFLOW_QSET_PATH={self._container_workdir}/question_set.yaml",
-            "-e",
-            f"GRADEFLOW_RUBRIC_PATH={self._container_workdir}/rubric.yaml",
-            "-e",
-            f"GRADEFLOW_OUT_PATH={self._container_workdir}/graded.yaml",
-            "-e",
-            f"GRADEFLOW_POINT_COLUMNS_JSON={point_columns_json}",
-            "-e",
-            f"GRADEFLOW_REMOVE_ADJUSTMENTS={str(remove_adjustments).lower()}",
-            "-e",
-            f"GRADEFLOW_OVERRIDE_RESULTS={str(override_results).lower()}",
-            "-e",
-            f"GRADEFLOW_GRADE_QUESTIONS_WITHOUT_RULE={str(grade_questions_without_rule).lower()}",
+            flag for key, value in gradeflow_env.items() for flag in ("-e", f"{key}={value}")
         ]
         # Insert env flags after 'run'
         try:

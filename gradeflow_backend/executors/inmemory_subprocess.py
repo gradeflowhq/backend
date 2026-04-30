@@ -6,6 +6,7 @@ from pathlib import Path
 
 from gradeflow_backend.config import get_settings
 from gradeflow_backend.executors.base import GradingJobExecutor
+from gradeflow_backend.executors.env import build_gradeflow_env
 from gradeflow_backend.executors.inmemory_base import InMemoryBaseJobExecutor
 from gradeflow_backend.executors.registry import register
 
@@ -23,6 +24,7 @@ class InMemorySubprocessJobExecutor(InMemoryBaseJobExecutor):
         entrypoint_py: Path,
         out_path: Path,
         callback_url: str,
+        callback_secret: str,
         assessment_id: str,
         job_type: str,
         point_columns_json: str = "{}",
@@ -38,24 +40,24 @@ class InMemorySubprocessJobExecutor(InMemoryBaseJobExecutor):
 
         env = {
             **os.environ,
-            # identity and callback
-            "GRADEFLOW_ASSESSMENT_ID": assessment_id,
-            "GRADEFLOW_JOB_TYPE": job_type,
-            "GRADEFLOW_CALLBACK_URL": callback_url,
-            # execution and timeouts
-            "GRADEFLOW_WORKDIR": str(workdir),
-            "GRADEFLOW_TIMEOUT_S": str(self._timeout_s),
-            "GRADEFLOW_CALLBACK_TIMEOUT_S": str(self._callback_timeout_s),
-            # explicit paths to avoid drift
-            "GRADEFLOW_ENGINE_BIN": engine_bin,
-            "GRADEFLOW_SUBMISSIONS_PATH": str(submissions_csv),
-            "GRADEFLOW_QSET_PATH": str(qset_yaml),
-            "GRADEFLOW_RUBRIC_PATH": str(rubric_yaml),
-            "GRADEFLOW_OUT_PATH": str(out_path),
-            "GRADEFLOW_POINT_COLUMNS_JSON": point_columns_json,
-            "GRADEFLOW_REMOVE_ADJUSTMENTS": str(remove_adjustments).lower(),
-            "GRADEFLOW_OVERRIDE_RESULTS": str(override_results).lower(),
-            "GRADEFLOW_GRADE_QUESTIONS_WITHOUT_RULE": str(grade_questions_without_rule).lower(),
+            **build_gradeflow_env(
+                assessment_id=assessment_id,
+                job_type=job_type,
+                callback_url=callback_url,
+                callback_secret=callback_secret,
+                engine_bin=engine_bin,
+                workdir=workdir,
+                submissions_path=submissions_csv,
+                qset_path=qset_yaml,
+                rubric_path=rubric_yaml,
+                out_path=out_path,
+                timeout_s=self._timeout_s,
+                callback_timeout_s=self._callback_timeout_s,
+                point_columns_json=point_columns_json,
+                remove_adjustments=remove_adjustments,
+                override_results=override_results,
+                grade_questions_without_rule=grade_questions_without_rule,
+            ),
         }
 
         logger.info(

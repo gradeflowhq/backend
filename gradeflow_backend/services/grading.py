@@ -1,4 +1,5 @@
 import random
+from typing import Any
 
 import yaml
 from fastapi import Request
@@ -307,7 +308,7 @@ class GradingService(BaseService):
         yaml_str = self.repo.get_preview_yaml(assessment_id)
         if not yaml_str:
             return GradingResponse(submissions=[], status=results_status(a))
-        items: list[dict[str, object]] = yaml.safe_load(yaml_str) or []
+        items: list[dict[str, Any]] = yaml.safe_load(yaml_str) or []
         self.repo.set_preview_yaml(assessment_id, None)
         return GradingResponse(
             submissions=[AdjustableSubmission.model_validate(obj) for obj in items],

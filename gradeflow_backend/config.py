@@ -102,6 +102,16 @@ class GradingSettings(BaseModel):
         default=20,
         description="Maximum allowed submissions to preview when no limit is set by the user.",
     )
+    run_requests_per_minute: int = Field(
+        default=10,
+        ge=1,
+        description="Maximum grading-run requests allowed per client per minute.",
+    )
+    preview_requests_per_minute: int = Field(
+        default=30,
+        ge=1,
+        description="Maximum grading-preview requests allowed per client per minute.",
+    )
 
 
 class AppSettings(BaseSettings):

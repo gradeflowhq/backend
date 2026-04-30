@@ -1,3 +1,4 @@
+import secrets
 import uuid
 from datetime import UTC, datetime
 
@@ -15,7 +16,7 @@ class OneTimeTokenRepository(BaseRepository):
 
     def create(self) -> OneTimeToken:
         tok = uuid.uuid4().hex
-        obj = OneTimeToken(token=tok)
+        obj = OneTimeToken(token=tok, secret=secrets.token_hex(32))
         self.session().add(obj)
         self.session().flush()
         return obj

@@ -1,4 +1,5 @@
 import logging
+from typing import TypeVar
 
 import valkey
 import yaml
@@ -6,8 +7,8 @@ from fastapi import Request
 from sqlalchemy.exc import NoResultFound
 from sqlalchemy.orm import Session
 
+from gradeflow_backend.executors.base import GradingJobExecutor
 from gradeflow_backend.executors.exceptions import JobNotFoundError
-from gradeflow_backend.executors.factory import get_executor
 from gradeflow_backend.repositories.assessments import AssessmentRepository
 from gradeflow_backend.repositories.grading_jobs import GradingJobRepository
 from gradeflow_backend.repositories.one_time_tokens import OneTimeTokenRepository
@@ -19,28 +20,36 @@ from gradeflow_backend.schemas.grading import (
     JobStatusResponse,
 )
 from gradeflow_backend.services.exceptions import (
-    AppError,
     BadRequestError,
     NotFoundError,
     ServiceUnavailableError,
+    UnauthorizedError,
 )
+from gradeflow_backend.utils.callback_signing import verify_callback_signature
 from gradeflow_backend.utils.jobs import build_callback_url, build_grading_job
 
 logger = logging.getLogger(__name__)
 
+T = TypeVar("T")
+
 
 class JobsService:
-    def __init__(self, db: Session, valkey_client: valkey.Valkey) -> None:
+    def __init__(
+        self,
+        db: Session,
+        valkey_client: valkey.Valkey,
+        executor: GradingJobExecutor,
+    ) -> None:
         self.db = db
         self.assessments = AssessmentRepository(db, valkey_client)
         self.grading_jobs = GradingJobRepository(db)
         self.tokens = OneTimeTokenRepository(db)
         self.submissions = SubmissionRepository(db)
-        self.executor = get_executor()
+        self.executor = executor
 
     def _set_data(self, assessment_id: str, type: str, result: GradingJobResult) -> None:
         if type == "preview":
-            payload = [gs.model_dump() for gs in result.submissions]
+            payload = [submission.model_dump() for submission in result.submissions]
             yaml_str = yaml.safe_dump(payload)
             self.assessments.set_preview_yaml(assessment_id, yaml_str)
         elif type == "run":
@@ -54,46 +63,38 @@ class JobsService:
             raise BadRequestError("Unknown job type")
 
     def submit(self, spec: GradingJobSpec, request: Request) -> GradingJob:
-        """
-        Submit a grading job and persist the one-time callback token and job_id immediately.
-        """
+        self.assessments.get(spec.assessment_id)
+
+        # 1. Create token on the request session
+        tok = self.tokens.create()
+        callback_url = build_callback_url(request, tok.token)
+
+        # 2. Commit token so the callback endpoint can see it.
+        #    If anything fails after this, the token is orphaned but harmless.
+        self.db.commit()
+
+        # 3. Submit to executor (may trigger synchronous callback)
         try:
-            # Validate assessment exists
-            self.assessments.get(spec.assessment_id)
+            job_id = self.executor.submit(
+                spec,
+                callback_url=callback_url,
+                callback_secret=tok.secret,
+            )
+        except Exception as e:
+            logger.exception(
+                "Executor failed to submit grading job",
+                extra={"assessment_id": spec.assessment_id, "job_type": spec.type},
+            )
+            raise ServiceUnavailableError(
+                "Unable to start grading job. The grading executor is unavailable "
+                "or failed to accept the job."
+            ) from e
 
-            # Create one-time token and build callback URL
-            tok = self.tokens.create()
-            callback_url = build_callback_url(request, tok.token)
+        # 4. Persist job record on the same session.
+        #    get_session() commits this on success, rolls back on failure.
+        self.grading_jobs.create(spec.assessment_id, spec.type, job_id)
 
-            # Commit token so that it is available for the executor callback
-            self.db.commit()
-
-            # Enqueue job
-            try:
-                job_id = self.executor.submit(spec, callback_url=callback_url)
-            except Exception as e:
-                logger.exception(
-                    "Executor failed to submit grading job",
-                    extra={"assessment_id": spec.assessment_id, "job_type": spec.type},
-                )
-                raise ServiceUnavailableError(
-                    "Unable to start grading job. The grading executor is unavailable "
-                    "or failed to accept the job."
-                ) from e
-
-            # Persist job_id
-            self.grading_jobs.create(spec.assessment_id, spec.type, job_id)
-
-            # Commit job_id
-            self.db.commit()
-
-            return build_grading_job(request, job_id)
-        except AppError:
-            self.db.rollback()
-            raise
-        except Exception:
-            self.db.rollback()
-            raise
+        return build_grading_job(request, job_id)
 
     def get_status(self, job_id: str) -> JobStatusResponse:
         try:
@@ -122,7 +123,14 @@ class JobsService:
                 "or failed to cancel the job."
             ) from e
 
-    def on_callback(self, token: str, result: GradingJobResult) -> None:
+    def on_callback(
+        self,
+        token: str,
+        result: GradingJobResult,
+        *,
+        payload: bytes,
+        signature: str | None,
+    ) -> None:
         """
         Handle executor callback:
         - Validate and consume one-time token
@@ -136,6 +144,8 @@ class JobsService:
             raise NotFoundError("Token not found") from e
         if not tok.is_valid():
             raise BadRequestError("Token already used or revoked")
+        if not verify_callback_signature(tok.secret, payload, signature):
+            raise UnauthorizedError("Invalid callback signature")
         self.tokens.consume(token)
 
         # Assessment validation

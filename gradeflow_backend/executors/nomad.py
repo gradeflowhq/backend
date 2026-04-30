@@ -8,6 +8,7 @@ from nomad import Nomad
 
 from gradeflow_backend.config import get_settings
 from gradeflow_backend.executors.base import GradingJobExecutor, format_job_error
+from gradeflow_backend.executors.env import build_gradeflow_env
 from gradeflow_backend.executors.exceptions import JobNotFoundError
 from gradeflow_backend.executors.inmemory_base import _load_entrypoint_source
 from gradeflow_backend.executors.registry import register
@@ -61,6 +62,7 @@ def _build_nomad_job(
     rubric_yaml: str,
     entrypoint_py: str,
     callback_url: str,
+    callback_secret: str,
     point_columns_json: str = "{}",
 ) -> dict[str, Any]:
     s = get_settings().executor
@@ -69,23 +71,24 @@ def _build_nomad_job(
     datacenters = s.nomad_datacenters or DEFAULT_DATACENTERS
     priority = _select_priority(spec.type)
 
-    env: dict[str, str] = {
-        "GRADEFLOW_ASSESSMENT_ID": spec.assessment_id,
-        "GRADEFLOW_JOB_TYPE": spec.type,
-        "GRADEFLOW_CALLBACK_URL": callback_url,
-        "GRADEFLOW_ENGINE_BIN": DEFAULT_ENGINE_BIN,
-        "GRADEFLOW_WORKDIR": workdir,
-        "GRADEFLOW_SUBMISSIONS_PATH": f"{workdir}/submissions.csv",
-        "GRADEFLOW_QSET_PATH": f"{workdir}/question_set.yaml",
-        "GRADEFLOW_RUBRIC_PATH": f"{workdir}/rubric.yaml",
-        "GRADEFLOW_OUT_PATH": f"{workdir}/graded.yaml",
-        "GRADEFLOW_TIMEOUT_S": str(s.timeout_s),
-        "GRADEFLOW_CALLBACK_TIMEOUT_S": str(s.callback_timeout_s),
-        "GRADEFLOW_POINT_COLUMNS_JSON": point_columns_json,
-        "GRADEFLOW_REMOVE_ADJUSTMENTS": str(spec.remove_adjustments).lower(),
-        "GRADEFLOW_OVERRIDE_RESULTS": str(spec.override_results).lower(),
-        "GRADEFLOW_GRADE_QUESTIONS_WITHOUT_RULE": str(spec.grade_questions_without_rule).lower(),
-    }
+    env = build_gradeflow_env(
+        assessment_id=spec.assessment_id,
+        job_type=spec.type,
+        callback_url=callback_url,
+        callback_secret=callback_secret,
+        engine_bin=s.engine_command or DEFAULT_ENGINE_BIN,
+        workdir=workdir,
+        submissions_path=f"{workdir}/submissions.csv",
+        qset_path=f"{workdir}/question_set.yaml",
+        rubric_path=f"{workdir}/rubric.yaml",
+        out_path=f"{workdir}/graded.yaml",
+        timeout_s=s.timeout_s,
+        callback_timeout_s=s.callback_timeout_s,
+        point_columns_json=point_columns_json,
+        remove_adjustments=spec.remove_adjustments,
+        override_results=spec.override_results,
+        grade_questions_without_rule=spec.grade_questions_without_rule,
+    )
 
     templates: list[dict[str, str]] = [
         {
@@ -165,7 +168,7 @@ class NomadJobExecutor(GradingJobExecutor):
             timeout=timeout_s,
         )
 
-    def submit(self, spec: GradingJobSpec, callback_url: str) -> str:
+    def submit(self, spec: GradingJobSpec, callback_url: str, callback_secret: str) -> str:
         job_id = f"{JOB_PREFIX}-{uuid.uuid4().hex}-{spec.type}"
 
         job = _build_nomad_job(
@@ -176,6 +179,7 @@ class NomadJobExecutor(GradingJobExecutor):
             rubric_yaml=render_rubric_yaml_minimal(spec),
             entrypoint_py=_load_entrypoint_source(),
             callback_url=callback_url,
+            callback_secret=callback_secret,
             point_columns_json=json.dumps(render_point_columns_map(spec)),
         )
 

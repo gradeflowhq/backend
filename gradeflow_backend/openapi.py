@@ -1,18 +1,14 @@
-from collections.abc import Callable
-from typing import Literal, cast
+from collections.abc import Iterator
+from typing import Any, Literal
 
 from fastapi import FastAPI
 
-# Recursive JSON types (use string literals for forward references)
-JSONScalar = str | int | float | bool | None
-JSONDict = dict[str, "JSONValue"]
-JSONList = list["JSONValue"]
-JSONValue = JSONScalar | JSONDict | JSONList
-
 PrimitiveType = Literal["string", "integer", "number", "boolean", "null"]
+SchemaDict = dict[str, Any]
+PRIMITIVE_TYPES: set[PrimitiveType] = {"string", "integer", "number", "boolean", "null"}
 
 
-def convert_primitive_anyof_merge_equal_or_absent(schema: JSONDict) -> None:
+def convert_primitive_anyof_merge_equal_or_absent(schema: SchemaDict) -> None:
     """
     Convert anyOf of primitive branches into `type: [..]` and lift simple constraints when safe.
 
@@ -31,16 +27,14 @@ def convert_primitive_anyof_merge_equal_or_absent(schema: JSONDict) -> None:
     if not isinstance(anyof, list) or not anyof:
         return
 
-    primitive_types: set[PrimitiveType] = {"string", "integer", "number", "boolean", "null"}
-
-    branches: list[JSONDict] = []
+    branches: list[SchemaDict] = []
     for br in anyof:
         if not isinstance(br, dict):
             return
         if "$ref" in br:
             return
         t = br.get("type")
-        if t not in primitive_types:
+        if t not in PRIMITIVE_TYPES:
             return
         branches.append(br)
 
@@ -48,13 +42,13 @@ def convert_primitive_anyof_merge_equal_or_absent(schema: JSONDict) -> None:
     seen_types: set[PrimitiveType] = set()
     type_array: list[PrimitiveType] = []
     for br in branches:
-        t = cast(PrimitiveType, br["type"])
+        t = br["type"]
         if t not in seen_types:
             seen_types.add(t)
             type_array.append(t)
 
     # Merge constraints: key must be equal across all branches that specify it
-    merged: JSONDict = {}
+    merged: SchemaDict = {}
     candidate_keys: set[str] = set()
     for br in branches:
         candidate_keys.update(k for k in br.keys() if k != "type")
@@ -77,24 +71,20 @@ def convert_primitive_anyof_merge_equal_or_absent(schema: JSONDict) -> None:
 
     # Apply conversion
     schema.pop("anyOf", None)
-    schema["type"] = cast(JSONValue, type_array)
+    schema["type"] = type_array
     for k, v in merged.items():
         schema[k] = v
 
 
-def _traverse_and_convert(node: JSONValue) -> None:
-    """
-    Post-order traversal that applies the transformer to every dict node.
-    """
+def _iter_schema_dicts(node: object) -> Iterator[SchemaDict]:
     if isinstance(node, dict):
-        for value in list(node.values()):
-            _traverse_and_convert(value)
-        convert_primitive_anyof_merge_equal_or_absent(node)
-    elif isinstance(node, list):
-        for item in node:
-            _traverse_and_convert(item)
-    else:
+        for value in node.values():
+            yield from _iter_schema_dicts(value)
+        yield node
         return
+    if isinstance(node, list):
+        for item in node:
+            yield from _iter_schema_dicts(item)
 
 
 def patch_openapi_union_format(app: FastAPI) -> None:
@@ -102,17 +92,17 @@ def patch_openapi_union_format(app: FastAPI) -> None:
     Patch app.openapi to post-process component schemas.
     Operates in-place on FastAPI's cached OpenAPI dict.
     """
-    original_openapi: Callable[[], JSONDict] = app.openapi
+    original_openapi = app.openapi
 
-    def patched_openapi() -> JSONDict:
-        spec: JSONDict = original_openapi()
+    def patched_openapi() -> SchemaDict:
+        spec = original_openapi()
         components = spec.get("components")
         if isinstance(components, dict):
             schemas = components.get("schemas")
             if isinstance(schemas, dict):
                 for s in schemas.values():
-                    if isinstance(s, dict):
-                        _traverse_and_convert(s)
+                    for node in _iter_schema_dicts(s):
+                        convert_primitive_anyof_merge_equal_or_absent(node)
         return spec
 
     app.openapi = patched_openapi  # type: ignore[method-assign]

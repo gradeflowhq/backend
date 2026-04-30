@@ -1,12 +1,16 @@
+from typing import Any
+
 from gradeflow_engine.core import (
     dump_question_set_to_blob,
     load_question_set_from_blob,
     load_question_set_via_adapter,
 )
 from gradeflow_engine.exceptions import GradeFlowError
+from gradeflow_engine.io.sources import DataSource
 from gradeflow_engine.question_sets.model import QuestionSet
+from gradeflow_engine.serializations.base import DataBlob
 
-from gradeflow_backend.repositories.assessments import AssessmentRepository
+from gradeflow_backend.models.assessment import Assessment
 from gradeflow_backend.schemas.question_sets import (
     ExportQuestionSetRequest,
     ExportQuestionSetResponse,
@@ -18,20 +22,18 @@ from gradeflow_backend.schemas.question_sets import (
     QuestionSetResponse,
     SetQuestionSetByModelRequest,
 )
-from gradeflow_backend.services.base import BaseService
 from gradeflow_backend.services.exceptions import BadRequestError
 from gradeflow_backend.services.submissions import derive_raw_submissions
+from gradeflow_backend.services.yaml_artifacts import YamlArtifactService
 from gradeflow_backend.utils.filenames import make_safe_export_basename
-from gradeflow_backend.utils.io import blob_from_str, source_from_data
 from gradeflow_backend.utils.loaders import load_question_set
 from gradeflow_backend.utils.resolvers import resolve_or_require
 from gradeflow_backend.utils.staleness import question_set_status
 
 
-class QuestionSetService(BaseService):
-    def __init__(self, repo: AssessmentRepository) -> None:
-        super().__init__(repo)
-
+class QuestionSetService(
+    YamlArtifactService[QuestionSet, QuestionSetResponse, ExportQuestionSetResponse]
+):
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -39,59 +41,26 @@ class QuestionSetService(BaseService):
     def set_by_model(
         self, assessment_id: str, req: SetQuestionSetByModelRequest
     ) -> QuestionSetResponse:
-        self._get_or_404(assessment_id)
-        return self._store_and_respond(assessment_id, req.question_set)
+        return self._set_by_model(assessment_id, req.question_set)
 
     def set_by_data(self, assessment_id: str, req: LoadQuestionSetRequest) -> QuestionSetResponse:
-        question_set = load_question_set_from_blob(
-            blob_from_str(
-                req.data,
-                media_type="application/octet-stream",
-                ext=req.serializer.format,
-            ),
-            serializer_name=req.serializer.format,
-            serializer_kwargs=req.serializer.model_dump(exclude={"format"}),
-        )
-        return self._store_and_respond(assessment_id, question_set)
+        return self._set_by_data(assessment_id, req.data, req.serializer)
 
     def set_by_adapter(
         self, assessment_id: str, req: ImportQuestionSetRequest
     ) -> QuestionSetResponse:
-        question_set = load_question_set_via_adapter(
-            source_from_data(req.data),
-            adapter_name=req.adapter.name,
-            adapter_kwargs=req.adapter.model_dump(exclude={"name"}),
-        )
-        return self._store_and_respond(assessment_id, question_set)
+        return self._set_by_adapter(assessment_id, req.data, req.adapter)
 
     def get(self, assessment_id: str) -> QuestionSetResponse:
-        a = self._get_or_404(assessment_id)
-        return QuestionSetResponse(
-            question_set=load_question_set(a),
-            status=question_set_status(a),
-        )
+        return self._get_response(assessment_id)
 
     def export(
         self, assessment_id: str, req: ExportQuestionSetRequest
     ) -> ExportQuestionSetResponse:
-        a = self._get_or_404(assessment_id)
-        question_set = load_question_set(a)
-        blob = dump_question_set_to_blob(
-            question_set,
-            serializer_name=req.serializer.format,
-            serializer_kwargs=req.serializer.model_dump(exclude={"format"}),
-        )
-        safe_name = make_safe_export_basename(a.name)
-        return ExportQuestionSetResponse(
-            filename=f"{safe_name}-questions.{blob.extension}",
-            data=blob.data,
-            extension=blob.extension,
-            media_type=blob.media_type,
-        )
+        return self._export_artifact(assessment_id, req.serializer)
 
     def delete(self, assessment_id: str) -> None:
-        self._get_or_404(assessment_id)
-        self.repo.set_question_set_yaml(assessment_id, None)
+        self._delete_artifact(assessment_id)
 
     def infer(self, assessment_id: str, req: InferQuestionSetRequest) -> QuestionSetResponse:
         a = self._get_or_404(assessment_id)
@@ -134,12 +103,66 @@ class QuestionSetService(BaseService):
     # Private helpers
     # ------------------------------------------------------------------
 
-    def _store_and_respond(
-        self, assessment_id: str, question_set: QuestionSet
-    ) -> QuestionSetResponse:
-        blob = dump_question_set_to_blob(question_set, serializer_name="yaml")
-        self.repo.set_question_set_yaml(assessment_id, blob.data.decode("utf-8"))
+    def _load_from_blob(
+        self,
+        blob: DataBlob,
+        *,
+        serializer_name: str,
+        serializer_kwargs: dict[str, Any] | None = None,
+    ) -> QuestionSet:
+        return load_question_set_from_blob(
+            blob,
+            serializer_name=serializer_name,
+            serializer_kwargs=serializer_kwargs,
+        )
+
+    def _load_via_adapter(
+        self,
+        source: DataSource,
+        *,
+        adapter_name: str,
+        adapter_kwargs: dict[str, Any] | None = None,
+    ) -> QuestionSet:
+        return load_question_set_via_adapter(
+            source,
+            adapter_name=adapter_name,
+            adapter_kwargs=adapter_kwargs,
+        )
+
+    def _load_stored(self, assessment: Assessment) -> QuestionSet:
+        return load_question_set(assessment)
+
+    def _dump_to_blob(
+        self,
+        artifact: QuestionSet,
+        *,
+        serializer_name: str,
+        serializer_kwargs: dict[str, Any] | None = None,
+    ) -> DataBlob:
+        return dump_question_set_to_blob(
+            artifact,
+            serializer_name=serializer_name,
+            serializer_kwargs=serializer_kwargs,
+        )
+
+    def _store_yaml(self, assessment_id: str, yaml_str: str | None) -> None:
+        self.repo.set_question_set_yaml(assessment_id, yaml_str)
+
+    def _build_response(self, assessment: Assessment, artifact: QuestionSet) -> QuestionSetResponse:
         return QuestionSetResponse(
-            question_set=question_set,
-            status=question_set_status(self._get_or_404(assessment_id)),
+            question_set=artifact,
+            status=question_set_status(assessment),
+        )
+
+    def _build_export_response(
+        self,
+        assessment: Assessment,
+        blob: DataBlob,
+    ) -> ExportQuestionSetResponse:
+        safe_name = make_safe_export_basename(assessment.name)
+        return ExportQuestionSetResponse(
+            filename=f"{safe_name}-questions.{blob.extension}",
+            data=blob.data,
+            extension=blob.extension,
+            media_type=blob.media_type,
         )

@@ -112,7 +112,19 @@ def patch_httpx_post(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> Non
     ) -> _ResponseLike:
         parsed = urlparse(url)
         path = parsed.path or "/"
-        resp = client.post(path, json=json)
+        raw_headers = kwargs.get("headers")
+        headers: dict[str, str] | None = (
+            dict(raw_headers) if isinstance(raw_headers, dict) else None
+        )
+        if json is not None:
+            resp = client.post(path, json=json, headers=headers)
+        else:
+            content = kwargs.get("content")
+            resp = client.post(
+                path,
+                content=content if isinstance(content, (str, bytes)) else None,
+                headers=headers,
+            )
 
         class _DummyResponse:
             status_code = resp.status_code

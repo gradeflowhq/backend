@@ -1,4 +1,7 @@
+import logging
 from datetime import UTC, datetime
+
+logger = logging.getLogger(__name__)
 
 
 def utcnow() -> datetime:
@@ -19,6 +22,7 @@ def ensure_utc(dt: datetime) -> datetime:
         A timezone-aware datetime in UTC.
     """
     if dt.tzinfo is None:
+        logger.warning("Received naive datetime; assuming UTC")
         return dt.replace(tzinfo=UTC)
     return dt.astimezone(UTC)
 

@@ -37,6 +37,7 @@ class _Job:
     id: str
     spec: GradingJobSpec
     callback_url: str
+    callback_secret: str
 
 
 class InMemoryBaseJobExecutor(GradingJobExecutor):
@@ -87,10 +88,10 @@ class InMemoryBaseJobExecutor(GradingJobExecutor):
 
     # ------- GradingJobExecutor API -------
 
-    def submit(self, spec: GradingJobSpec, callback_url: str) -> str:
+    def submit(self, spec: GradingJobSpec, callback_url: str, callback_secret: str) -> str:
         self.start()
         job_id = f"job-{uuid.uuid4().hex}-{spec.type}"
-        job = _Job(id=job_id, spec=spec, callback_url=callback_url)
+        job = _Job(id=job_id, spec=spec, callback_url=callback_url, callback_secret=callback_secret)
         with self._lock:
             self._status[job_id] = "queued"
             self._errors[job_id] = None
@@ -234,6 +235,7 @@ class InMemoryBaseJobExecutor(GradingJobExecutor):
                 entrypoint_py=entrypoint_py,
                 out_path=out_yaml,
                 callback_url=job.callback_url,
+                callback_secret=job.callback_secret,
                 assessment_id=spec.assessment_id,
                 job_type=spec.type,
                 point_columns_json=json.dumps(render_point_columns_map(spec)),
@@ -254,6 +256,7 @@ class InMemoryBaseJobExecutor(GradingJobExecutor):
         entrypoint_py: Path,
         out_path: Path,
         callback_url: str,
+        callback_secret: str,
         assessment_id: str,
         job_type: str,  # "run" | "preview"
         point_columns_json: str = "{}",

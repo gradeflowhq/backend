@@ -1,7 +1,11 @@
+from typing import Any, cast
+
 import pytest
 
+from gradeflow_backend.dependencies.executor import get_executor
 from gradeflow_backend.executors.base import GradingJobExecutor
 from gradeflow_backend.executors.exceptions import JobNotFoundError
+from gradeflow_backend.main import app
 from gradeflow_backend.schemas.grading import GradingJobSpec, JobStatus
 from tests.helpers.api import ApiClient
 from tests.helpers.data import QUESTION_SET_YAML, RUBRIC_YAML, SUBMISSIONS_CSV
@@ -12,7 +16,7 @@ class _FailingExecutor(GradingJobExecutor):
         self._error_message = error_message
         self._job_id = "job-failed-run"
 
-    def submit(self, spec: GradingJobSpec, callback_url: str) -> str:
+    def submit(self, spec: GradingJobSpec, callback_url: str, callback_secret: str) -> str:
         return self._job_id
 
     def get_status(self, job_id: str) -> JobStatus:
@@ -33,7 +37,7 @@ class _FailingExecutor(GradingJobExecutor):
 
 
 class _SubmitFailingExecutor(GradingJobExecutor):
-    def submit(self, spec: GradingJobSpec, callback_url: str) -> str:
+    def submit(self, spec: GradingJobSpec, callback_url: str, callback_secret: str) -> str:
         raise ConnectionError("Nomad is unavailable")
 
     def get_status(self, job_id: str) -> JobStatus:
@@ -52,7 +56,9 @@ def test_job_status_includes_failure_error(
 ) -> None:
     error_message = "Engine callback failed\nTraceback (most recent call last):\n  grading.py:42"
     executor = _FailingExecutor(error_message)
-    monkeypatch.setattr("gradeflow_backend.services.jobs.get_executor", lambda: executor)
+    monkeypatch.setitem(
+        cast(dict[Any, Any], app.dependency_overrides), get_executor, lambda: executor
+    )
 
     created = api.create_assessment("Failed Grading Job")
     api.set_question_set_yaml(created.id, QUESTION_SET_YAML)
@@ -70,9 +76,9 @@ def test_job_submission_executor_failure_returns_structured_503(
     api: ApiClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        "gradeflow_backend.services.jobs.get_executor",
-        lambda: _SubmitFailingExecutor(),
+    executor = _SubmitFailingExecutor()
+    monkeypatch.setitem(
+        cast(dict[Any, Any], app.dependency_overrides), get_executor, lambda: executor
     )
 
     created = api.create_assessment("Executor Unavailable")

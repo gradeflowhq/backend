@@ -11,6 +11,8 @@ from fastapi import Depends
 from sqlalchemy.orm import Session
 
 from gradeflow_backend.db import get_session, get_valkey
+from gradeflow_backend.dependencies.executor import get_executor
+from gradeflow_backend.executors.base import GradingJobExecutor
 from gradeflow_backend.repositories.assessments import AssessmentRepository
 from gradeflow_backend.repositories.grading_jobs import GradingJobRepository
 from gradeflow_backend.repositories.memberships import MembershipRepository
@@ -59,8 +61,9 @@ def get_grading_service(
 def get_jobs_service(
     db: Session = Depends(get_session),
     valkey_client: valkey.Valkey = Depends(get_valkey),
+    executor: GradingJobExecutor = Depends(get_executor),
 ) -> JobsService:
-    return JobsService(db, valkey_client)
+    return JobsService(db, valkey_client, executor)
 
 
 def get_membership_service(db: Session = Depends(get_session)) -> MembershipService:

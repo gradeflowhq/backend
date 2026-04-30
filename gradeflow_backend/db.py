@@ -22,17 +22,22 @@ def _build_engine() -> Engine:
     return create_engine(url, **kwargs)
 
 
-ENGINE = _build_engine()
+@lru_cache(maxsize=1)
+def get_engine() -> Engine:
+    return _build_engine()
 
-SessionLocal = sessionmaker(bind=ENGINE, autoflush=False, autocommit=False)
+
+@lru_cache(maxsize=1)
+def get_session_factory() -> sessionmaker[Session]:
+    return sessionmaker(bind=get_engine(), autoflush=False, autocommit=False)
 
 
 def init_db() -> None:
-    Base.metadata.create_all(bind=ENGINE)
+    Base.metadata.create_all(bind=get_engine())
 
 
 def get_session() -> Generator[Session, Any, Any]:
-    db = SessionLocal()
+    db = get_session_factory()()
     try:
         yield db
         db.commit()

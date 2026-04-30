@@ -10,6 +10,7 @@ class OneTimeToken(Base):
     __tablename__ = "one_time_tokens"
 
     token: Mapped[str] = mapped_column(String(128), primary_key=True)
+    secret: Mapped[str] = mapped_column(String(128), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     revoked: Mapped[bool] = mapped_column(Boolean, default=False)

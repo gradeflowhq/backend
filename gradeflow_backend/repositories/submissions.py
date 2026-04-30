@@ -209,7 +209,7 @@ class SubmissionRepository(BaseRepository):
         return {(student_id, result.question_id): result for result, student_id in rows}
 
     @staticmethod
-    def to_adjustable_submission(gs: SubmissionRecord) -> AdjustableSubmission:
+    def to_adjustable_submission(submission_record: SubmissionRecord) -> AdjustableSubmission:
         result_map = {
             r.question_id: AdjustableQuestionResult(
                 output=r.output,
@@ -222,10 +222,10 @@ class SubmissionRepository(BaseRepository):
                 adjusted_points=r.adjusted_points,
                 adjusted_feedback=r.adjusted_feedback,
             )
-            for r in gs.results
+            for r in submission_record.results
         }
         return AdjustableSubmission(
-            student_id=gs.student_id,
-            answer_map=gs.answer_map,
+            student_id=submission_record.student_id,
+            answer_map=submission_record.answer_map,
             result_map=result_map,
         )

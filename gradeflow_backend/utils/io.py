@@ -1,4 +1,4 @@
-from gradeflow_engine.io.sources import BytesSource, DataSource, StringSource
+from gradeflow_engine.io.sources import BytesSource, StringSource
 from gradeflow_engine.serializations.base import DataBlob
 
 
@@ -15,12 +15,20 @@ def blob_from_str(data: str, media_type: str, ext: str) -> DataBlob:
     return DataBlob(data=data.encode("utf-8"), media_type=media_type, extension=ext)
 
 
-def source_from_data(data: str | bytes) -> DataSource:
+def source_from_data(data: str | bytes) -> StringSource | BytesSource:
     """
-    Build a DataSource from a str or bytes payload.
-    - bytes -> BytesSource with default media_type 'application/octet-stream' and extension 'bin'
-    - str   -> StringSource with default media_type 'text/plain' and extension 'txt'
+    Build an engine source object from a str or bytes payload.
+    - bytes -> application/octet-stream with extension 'bin'
+    - str   -> text/plain with extension 'txt'
     """
     if isinstance(data, (bytes, bytearray)):
-        return BytesSource(bytes(data), media_type="application/octet-stream", extension="bin")
-    return StringSource(str(data), media_type="text/plain", extension="txt")
+        return BytesSource(
+            data=bytes(data),
+            media_type="application/octet-stream",
+            extension="bin",
+        )
+    return StringSource(
+        data=str(data),
+        media_type="text/plain",
+        extension="txt",
+    )

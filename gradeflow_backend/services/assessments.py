@@ -4,8 +4,6 @@ from datetime import datetime
 
 import yaml
 from gradeflow_engine.exceptions import GradeFlowError
-from gradeflow_engine.question_sets.model import QuestionSet
-from gradeflow_engine.rubrics.model import Rubric
 
 from gradeflow_backend.models.assessment import Assessment
 from gradeflow_backend.repositories.assessments import AssessmentRepository
@@ -20,6 +18,7 @@ from gradeflow_backend.schemas.assessments import (
 )
 from gradeflow_backend.services.base import BaseService
 from gradeflow_backend.utils.datetime import ensure_utc
+from gradeflow_backend.utils.loaders import load_question_set, load_rubric
 
 
 def _effective_updated_at(a: Assessment) -> datetime:
@@ -58,10 +57,8 @@ def _compute_coverage(a: Assessment) -> AssessmentCoverage | None:
     if not a.rubric_yaml or not a.question_set_yaml:
         return None
     try:
-        rubric_data = yaml.safe_load(a.rubric_yaml)
-        rubric = Rubric.model_validate(rubric_data)
-        qs_data = yaml.safe_load(a.question_set_yaml)
-        question_set = QuestionSet.model_validate(qs_data)
+        rubric = load_rubric(a)
+        question_set = load_question_set(a)
         cov = rubric.get_coverage(question_set)
         return AssessmentCoverage(
             total=cov.total,

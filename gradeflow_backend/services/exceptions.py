@@ -18,6 +18,11 @@ class BadRequestError(AppError):
     code = "BAD_REQUEST"
 
 
+class UnauthorizedError(AppError):
+    status_code = 401
+    code = "UNAUTHORIZED"
+
+
 class ServiceUnavailableError(AppError):
     status_code = 503
     code = "SERVICE_UNAVAILABLE"

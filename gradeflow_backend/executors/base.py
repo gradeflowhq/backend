@@ -19,7 +19,7 @@ class GradingJobExecutor(ABC):
     """
 
     @abstractmethod
-    def submit(self, spec: GradingJobSpec, callback_url: str) -> str:
+    def submit(self, spec: GradingJobSpec, callback_url: str, callback_secret: str) -> str:
         """
         Enqueue the job for execution and return a job_id.
         Preview jobs should be prioritized over run jobs.

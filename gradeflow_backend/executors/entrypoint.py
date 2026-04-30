@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import subprocess
 import sys
@@ -12,41 +13,74 @@ from gradeflow_engine.submissions.models import Submission
 from pydantic import BaseModel, Field, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# ---------------------------------------------------------------------------
+# Environment variable names (duplicated from gradeflow_backend.executors.env
+# because this file runs in a container without the backend package installed)
+# ---------------------------------------------------------------------------
+_PREFIX = "GRADEFLOW_"
+ASSESSMENT_ID_ENV = f"{_PREFIX}ASSESSMENT_ID"
+JOB_TYPE_ENV = f"{_PREFIX}JOB_TYPE"
+CALLBACK_URL_ENV = f"{_PREFIX}CALLBACK_URL"
+CALLBACK_SECRET_ENV = f"{_PREFIX}CALLBACK_SECRET"
+ENGINE_BIN_ENV = f"{_PREFIX}ENGINE_BIN"
+WORKDIR_ENV = f"{_PREFIX}WORKDIR"
+SUBMISSIONS_PATH_ENV = f"{_PREFIX}SUBMISSIONS_PATH"
+QSET_PATH_ENV = f"{_PREFIX}QSET_PATH"
+RUBRIC_PATH_ENV = f"{_PREFIX}RUBRIC_PATH"
+OUT_PATH_ENV = f"{_PREFIX}OUT_PATH"
+TIMEOUT_S_ENV = f"{_PREFIX}TIMEOUT_S"
+CALLBACK_TIMEOUT_S_ENV = f"{_PREFIX}CALLBACK_TIMEOUT_S"
+POINT_COLUMNS_JSON_ENV = f"{_PREFIX}POINT_COLUMNS_JSON"
+REMOVE_ADJUSTMENTS_ENV = f"{_PREFIX}REMOVE_ADJUSTMENTS"
+OVERRIDE_RESULTS_ENV = f"{_PREFIX}OVERRIDE_RESULTS"
+GRADE_QUESTIONS_WITHOUT_RULE_ENV = f"{_PREFIX}GRADE_QUESTIONS_WITHOUT_RULE"
 
+CALLBACK_SIGNATURE_HEADER = "X-GradeFlow-Signature"
+
+
+# ---------------------------------------------------------------------------
+# Callback signing (duplicated from gradeflow_backend.utils.callback_signing)
+# ---------------------------------------------------------------------------
+def _dump_callback_payload(payload: BaseModel) -> bytes:
+    data = payload.model_dump(mode="json")
+    return json.dumps(data, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode(
+        "utf-8"
+    )
+
+
+def _sign_callback_payload(secret: str, payload: bytes) -> str:
+    digest = hmac.new(secret.encode("utf-8"), payload, hashlib.sha256).hexdigest()
+    return f"sha256={digest}"
+
+
+# ---------------------------------------------------------------------------
+# Config
+# ---------------------------------------------------------------------------
 class Config(BaseSettings):
-    model_config = SettingsConfigDict(
-        env_prefix="GRADEFLOW_",
-        case_sensitive=False,
+    model_config = SettingsConfigDict(case_sensitive=False)
+
+    assessment_id: str = Field(..., validation_alias=ASSESSMENT_ID_ENV)
+    job_type: str = Field(..., validation_alias=JOB_TYPE_ENV)
+    callback_url: str = Field(..., validation_alias=CALLBACK_URL_ENV)
+    callback_secret: str = Field(..., validation_alias=CALLBACK_SECRET_ENV)
+
+    engine_bin: str = Field(default="gradeflow-engine", validation_alias=ENGINE_BIN_ENV)
+    workdir: Path = Field(default=Path("/workspace"), validation_alias=WORKDIR_ENV)
+
+    submissions_path: Path | None = Field(default=None, validation_alias=SUBMISSIONS_PATH_ENV)
+    qset_path: Path | None = Field(default=None, validation_alias=QSET_PATH_ENV)
+    rubric_path: Path | None = Field(default=None, validation_alias=RUBRIC_PATH_ENV)
+    out_path: Path | None = Field(default=None, validation_alias=OUT_PATH_ENV)
+
+    timeout_s: int = Field(default=300, ge=1, validation_alias=TIMEOUT_S_ENV)
+    callback_timeout_s: int = Field(default=10, validation_alias=CALLBACK_TIMEOUT_S_ENV)
+    point_columns_json: str = Field(default="{}", validation_alias=POINT_COLUMNS_JSON_ENV)
+
+    remove_adjustments: bool = Field(default=False, validation_alias=REMOVE_ADJUSTMENTS_ENV)
+    override_results: bool = Field(default=True, validation_alias=OVERRIDE_RESULTS_ENV)
+    grade_questions_without_rule: bool = Field(
+        default=True, validation_alias=GRADE_QUESTIONS_WITHOUT_RULE_ENV
     )
-
-    # Required identity/callback
-    assessment_id: str = Field(..., description="Assessment ID")
-    job_type: str = Field(..., description="Job type: run | preview")
-    callback_url: str = Field(..., description="Callback URL to POST results")
-
-    # Execution
-    engine_bin: str = Field(default="gradeflow-engine", description="Engine CLI binary")
-    workdir: Path = Field(default=Path("/workspace"), description="Working directory")
-
-    # Paths (optional; resolved against workdir if missing)
-    submissions_path: Path | None = Field(default=None, description="Path to submissions.csv")
-    qset_path: Path | None = Field(default=None, description="Path to question_set.yaml")
-    rubric_path: Path | None = Field(default=None, description="Path to rubric.yaml")
-    out_path: Path | None = Field(default=None, description="Path to graded.yaml")
-
-    # Timeouts
-    timeout_s: int = Field(default=300, ge=1, description="Engine CLI timeout (seconds)")
-    callback_timeout_s: int = Field(default=10, description="Callback POST timeout (seconds)")
-    point_columns_json: str = Field(
-        default="{}", description="JSON-encoded {qid: col} passthrough point column mapping"
-    )
-
-    # Misc
-    remove_adjustments: bool = Field(
-        default=False, description="When True, clear manual adjustments on re-graded submissions"
-    )
-    override_results: bool = Field(default=True)
-    grade_questions_without_rule: bool = Field(default=True)
 
     def resolved_submissions(self) -> Path:
         return self.submissions_path or (self.workdir / "submissions.csv")
@@ -149,7 +183,12 @@ def main() -> int:
     )
 
     try:
-        items: list[Submission] = yaml.safe_load(out_yaml.read_text(encoding="utf-8"))
+        raw_items = yaml.safe_load(out_yaml.read_text(encoding="utf-8"))
+        if raw_items is None:
+            raw_items = []
+        if not isinstance(raw_items, list):
+            raise TypeError("graded output must be a list")
+        items = [Submission.model_validate(item) for item in raw_items]
     except Exception as e:
         sys.stderr.write(f"[entrypoint] Failed to read graded output: {e}\n")
         return 1
@@ -161,9 +200,19 @@ def main() -> int:
         remove_adjustments=cfg.remove_adjustments,
     )
 
+    payload_bytes = _dump_callback_payload(payload)
+
     try:
         resp = httpx.post(
-            cfg.callback_url, json=payload.model_dump(mode="json"), timeout=cfg.callback_timeout_s
+            cfg.callback_url,
+            content=payload_bytes,
+            timeout=cfg.callback_timeout_s,
+            headers={
+                "Content-Type": "application/json",
+                CALLBACK_SIGNATURE_HEADER: _sign_callback_payload(
+                    cfg.callback_secret, payload_bytes
+                ),
+            },
         )
     except Exception as e:
         sys.stderr.write(f"[entrypoint] Callback POST failed: {e}\n")

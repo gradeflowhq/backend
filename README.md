@@ -28,8 +28,10 @@ Settings are loaded from environment variables (or an optional `.env` file) usin
 
 **Zitadel (Identity Provider)** (`ZITADEL__*`)
 - `ZITADEL__AUTHORITY` — Zitadel instance URL (default: `https://zitadel.cloud`)
-- `ZITADEL__CLIENT_ID` — OAuth2 Client ID from Zitadel
+- `ZITADEL__CLIENT_ID` — OAuth2 Client ID from Zitadel (required)
+- `ZITADEL__AUDIENCE` — Expected JWT audience (aud) claim; typically the Zitadel Project Resource ID. Falls back to `CLIENT_ID` when empty.
 - `ZITADEL__ORG_DOMAIN` — Primary org domain — scopes login so users type username only (optional)
+- `ZITADEL__JWKS_CACHE_TTL` — JWKS cache lifetime in seconds (default: `300`). Zitadel rotates keys without notice, so the cache is refreshed periodically and on-demand when an unknown `kid` is encountered.
 
 **Database** (`DATABASE__*`)
 
@@ -66,8 +68,26 @@ Set `DATABASE__URL` to the SQLAlchemy connection string for your database:
 
 **Grading** (`GRADING__*`)
 - `GRADING__MAX_SUBMISSION_PREVIEW` — maximum submissions allowed in a preview run (default: `20`)
+- `GRADING__RUN_REQUESTS_PER_MINUTE` — maximum grading-run requests allowed per client per minute (default: `10`)
+- `GRADING__PREVIEW_REQUESTS_PER_MINUTE` — maximum grading-preview requests allowed per client per minute (default: `30`)
 
 Example `.env` can be found in `.env.example`.
+
+### Database Migrations
+
+The backend uses [Alembic](https://alembic.sqlalchemy.org/) for database schema migrations. After installation, run:
+
+```bash
+alembic upgrade head
+```
+
+This applies all pending migrations. When developing locally with SQLite, the app also calls `init_db()` on startup to create tables, but for production databases (PostgreSQL, MySQL/MariaDB) you should always use Alembic.
+
+To generate a new migration after model changes:
+
+```bash
+alembic revision --autogenerate -m "description of change"
+```
 
 ### Run the App
 
@@ -110,7 +130,7 @@ Access tokens are obtained from Zitadel and used in the Authorization header:
 Authorization: Bearer <access_token>
 ```
 
-User records are automatically created/updated in the local database when a valid Zitadel token is first seen (email and name synced from token claims).
+User records are automatically created/updated in the local database when a valid Zitadel token is first seen (email and name synced from token claims or the userinfo endpoint).
 
 ## Roles and Access Control
 
@@ -154,6 +174,7 @@ Route guards:
 
 - Question Sets
   - GET /assessments/{id}/question-set -> get (member)
+  - POST /assessments/{id}/question-set/export -> export (member)
   - PUT /assessments/{id}/question-set -> set by model (editor)
   - PUT /assessments/{id}/question-set/upload -> set by raw data (editor)
   - PUT /assessments/{id}/question-set/import -> import via adapter (editor)
@@ -163,6 +184,7 @@ Route guards:
 
 - Rubrics
   - GET /assessments/{id}/rubric -> get (member)
+  - POST /assessments/{id}/rubric/export -> export (member)
   - PUT /assessments/{id}/rubric -> set by model (editor)
   - PUT /assessments/{id}/rubric/upload -> set by raw data (editor)
   - PUT /assessments/{id}/rubric/import -> import via adapter (editor)
@@ -196,6 +218,10 @@ Route guards:
   - GET /jobs/{job_id} -> get job status -> JobStatusResponse
   - POST /jobs/callback/{token} -> executor callback (internal) -> 204
 
+### Staleness Tracking
+
+Each assessment tracks fine-grained `updated_at` timestamps for source data, question set, rubric, and grading results. The `SectionStatus` model (included in question set, rubric, and grading responses) contains an `updated_at` timestamp and an `is_stale` flag. Staleness cascades through the pipeline: if source data is updated after the question set, the question set is marked stale; if the question set is stale or updated after the rubric, the rubric is marked stale; and if the rubric is stale or updated after the grading results, the results are marked stale. This lets the frontend prompt users to re-run downstream steps when upstream data changes.
+
 ### Response/Request Models
 
 See `gradeflow_backend/schemas/` for Pydantic models. Notable external models from GradeFlow Engine:
@@ -208,7 +234,10 @@ See `gradeflow_backend/schemas/` for Pydantic models. Notable external models fr
 Key backend schemas:
 - `AdjustableQuestionResult` — `QuestionResult` extended with `adjusted_points` / `adjusted_feedback`
 - `AdjustableSubmission` — `Submission` with `result_map` typed as `dict[QuestionId, AdjustableQuestionResult]`
+- `GradingRunRequest` — `remove_adjustments` (default `false`) to clear manual adjustments on re-grade, and `override_results` (default `true`) to control whether rule results overwrite pre-existing points
 - `GradingResponse` — wraps `submissions: list[AdjustableSubmission]` and a `SectionStatus`
+- `GradingDownloadRequest` — `serializer: SubmissionsSerializerConfig` to choose output format (CSV / JSON / YAML)
+- `GradingDownloadResponse` — `filename`, `data` (bytes), `extension`, and `media_type`
 - `GradeAdjustmentRequest` — targets a single `(student_id, question_id)` pair with optional `adjusted_points` / `adjusted_feedback`
 - `BulkGradeAdjustmentRequest` — list of `GradeAdjustmentRequest` items (min 1)
 - `BulkGradeAdjustmentResponse` — `applied` count, `errors` list, and updated `result`
@@ -216,27 +245,28 @@ Key backend schemas:
 - `GradingPreviewRequest` — optional single `rule` and a `GradingLimitConfig`
 - `GradingJob` — returned by run / preview; contains `job_id` and a polling `url`
 - `JobStatusResponse` — `job_id`, `status` (`queued` | `running` | `completed` | `failed`), and optional `error`
+- `ExportQuestionSetRequest` / `ExportQuestionSetResponse` — serializer config and exported file data
+- `ExportRubricRequest` / `ExportRubricResponse` — serializer config and exported file data
 - `SourceDataResponse` — parsed `headers`, `rows`, `total_rows`, and `student_id_column` for the uploaded CSV
 - `SubmissionsImportConfig` — optional `answer_columns` list and optional `point_columns` mapping (`question_id` -> CSV column name)
 - `SectionStatus` — `updated_at` timestamp and `is_stale` flag, included in question set, rubric, and grading responses
 
 ## Example Workflow (cURL)
 
+This example assumes you have a Zitadel instance configured and have obtained an access token via the Zitadel OAuth2 flow (Authorization Code or Device Authorization grant).
+
 ```bash
-# 1) Signup
-curl -s -X POST http://localhost:8000/auth/signup \
-  -H "Content-Type: application/json" \
-  -d '{"email":"user@example.com","password":"Super-Strong-Pass-123!"}'
+# 1) Obtain an access token from your Zitadel instance.
+#    Use the Authorization Code flow, Device Authorization flow, or
+#    Zitadel's built-in token endpoint with a service user.
+#    See: https://zitadel.com/docs/guides/integrate/login
+ACCESS="<your_zitadel_access_token>"
 
-# 2) OAuth2 Password token
-curl -s -X POST http://localhost:8000/auth/token \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  -d 'username=user@example.com&password=Super-Strong-Pass-123!'
+# 2) Verify your identity
+curl -s http://localhost:8000/users/me \
+  -H "Authorization: Bearer $ACCESS"
 
-# Export ACCESS from the response
-ACCESS="<access_token>"
-
-# 3) Create assessment (auth required)
+# 3) Create assessment (auth required; creator becomes owner)
 curl -s -X POST http://localhost:8000/assessments \
   -H "Authorization: Bearer $ACCESS" \
   -H "Content-Type: application/json" \

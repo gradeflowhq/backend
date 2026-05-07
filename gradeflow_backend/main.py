@@ -18,6 +18,7 @@ from gradeflow_backend.routers import (
     question_sets,
     registry,
     rubrics,
+    rules,
     submissions,
     users,
 )
@@ -75,6 +76,7 @@ def create_app() -> FastAPI:
     app.include_router(submissions.router)
     app.include_router(question_sets.router)
     app.include_router(rubrics.router)
+    app.include_router(rules.router)
     app.include_router(grading.router)
     app.include_router(memberships.router)
     app.include_router(jobs.router)

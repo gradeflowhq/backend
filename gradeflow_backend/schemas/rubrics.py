@@ -1,6 +1,7 @@
 from gradeflow_engine.adapters.rubric import RubricAdapterConfig
 from gradeflow_engine.question_sets.model import QuestionSet
 from gradeflow_engine.rubrics.model import Rubric, RubricCoverage
+from gradeflow_engine.rules.models import QuestionRule
 from gradeflow_engine.rules.types import RuleValidationError
 from gradeflow_engine.serializations.rubric import RubricSerializerConfig
 from pydantic import BaseModel, Field
@@ -24,6 +25,19 @@ class ImportRubricRequest(BaseModel):
 
 class RubricResponse(BaseModel):
     rubric: Rubric
+    status: SectionStatus
+
+
+class RuleCreateRequest(BaseModel):
+    rule: QuestionRule
+
+
+class RuleUpdateRequest(BaseModel):
+    rule: QuestionRule
+
+
+class RulesResponse(BaseModel):
+    rules: list[QuestionRule]
     status: SectionStatus
 
 

@@ -28,6 +28,146 @@ def test_rubric_set_get_validate_delete(api: ApiClient) -> None:
     assert resp.status_code == 404, resp.text
 
 
+def test_rule_crud(api: ApiClient) -> None:
+    created = api.create_assessment("Rule CRUD")
+    api.set_question_set_yaml(created.id, QUESTION_SET_YAML)
+
+    rubric_dict = yaml.safe_load(RUBRIC_YAML)
+    text_rule = rubric_dict["rules"][0]
+    numeric_rule = rubric_dict["rules"][1]
+
+    created_rubric = api.create_rule(created.id, text_rule)
+    assert len(created_rubric.rubric.rules) == 1
+    assert created_rubric.rubric.rules[0].type == "TEXT_MATCH"
+    rule_id = created_rubric.rubric.rules[0].id
+    assert len(rule_id) == 32
+
+    listed = api.try_list_rules(created.id)
+    assert listed.status_code == 200, listed.text
+    listed_body = listed.json()
+    assert "rule_id" not in listed_body["rules"][0]
+    assert [rule["id"] for rule in listed_body["rules"]] == [rule_id]
+    assert listed_body["rules"][0]["type"] == "TEXT_MATCH"
+
+    got = api.try_get_rule(created.id, rule_id)
+    assert got.status_code == 200, got.text
+    assert got.json()["question_id"] == "q1"
+
+    updated_rubric = api.update_rule(created.id, rule_id, {**numeric_rule, "id": rule_id})
+    assert len(updated_rubric.rubric.rules) == 1
+    assert updated_rubric.rubric.rules[0].type == "NUMERIC_RANGE"
+    assert updated_rubric.rubric.rules[0].id == rule_id
+
+    api.create_rule(created.id, text_rule)
+    api.delete_rule(created.id, rule_id)
+
+    remaining = api.get_rubric(created.id).rubric.rules
+    assert len(remaining) == 1
+    assert remaining[0].type == "TEXT_MATCH"
+
+
+def test_rule_create_ignores_client_supplied_id(api: ApiClient) -> None:
+    created = api.create_assessment("Rule ID Authority")
+    api.set_question_set_yaml(created.id, QUESTION_SET_YAML)
+
+    rubric_dict = yaml.safe_load(RUBRIC_YAML)
+    requested_rule = {**rubric_dict["rules"][0], "id": "client-id"}
+
+    created_rubric = api.create_rule(created.id, requested_rule)
+
+    assert created_rubric.rubric.rules[0].id != "client-id"
+    assert len(created_rubric.rubric.rules[0].id) == 32
+
+
+def test_rule_update_requires_matching_body_id(api: ApiClient) -> None:
+    created = api.create_assessment("Rule ID Match")
+    api.set_question_set_yaml(created.id, QUESTION_SET_YAML)
+
+    rubric_dict = yaml.safe_load(RUBRIC_YAML)
+    text_rule = rubric_dict["rules"][0]
+    numeric_rule = rubric_dict["rules"][1]
+
+    created_rubric = api.create_rule(created.id, text_rule)
+    rule_id = created_rubric.rubric.rules[0].id
+
+    failed = api.try_update_rule(created.id, rule_id, {**numeric_rule, "id": "different"})
+
+    assert failed.status_code == 400, failed.text
+    assert failed.json()["code"] == "BAD_REQUEST"
+
+    unchanged = api.get_rubric(created.id).rubric.rules
+    assert len(unchanged) == 1
+    assert unchanged[0].id == rule_id
+    assert unchanged[0].type == "TEXT_MATCH"
+
+
+def test_rule_update_validates_prospective_rubric(api: ApiClient) -> None:
+    created = api.create_assessment("Rule Validation")
+    api.set_question_set_yaml(created.id, QUESTION_SET_YAML)
+
+    rubric_dict = yaml.safe_load(RUBRIC_YAML)
+    text_rule = rubric_dict["rules"][0]
+    created_rubric = api.create_rule(created.id, text_rule)
+    assert getattr(created_rubric.rubric.rules[0], "question_id", None) == "q1"
+    rule_id = created_rubric.rubric.rules[0].id
+    invalid_rule = {**text_rule, "id": rule_id, "question_id": "missing"}
+
+    failed = api.try_update_rule(created.id, rule_id, invalid_rule)
+    assert failed.status_code == 422, failed.text
+    assert failed.json()["code"] == "RUBRIC_VALIDATION_ERROR"
+
+    unchanged = api.get_rubric(created.id).rubric.rules
+    assert len(unchanged) == 1
+    assert getattr(unchanged[0], "question_id", None) == "q1"
+
+
+def test_create_empty_rubric_creates_empty_rubric(api: ApiClient) -> None:
+    created = api.create_assessment("Empty Rules")
+
+    before = api.try_get_rubric(created.id)
+    assert before.status_code == 404, before.text
+
+    created_empty = api.create_empty_rubric(created.id)
+
+    assert created_empty.rubric.rules == []
+    assert api.get_rubric(created.id).rubric.rules == []
+
+
+def test_create_empty_rubric_rejects_existing_rubric(api: ApiClient) -> None:
+    created = api.create_assessment("Existing Rules")
+    api.set_question_set_yaml(created.id, QUESTION_SET_YAML)
+    api.set_rubric_yaml(created.id, RUBRIC_YAML)
+
+    failed = api.try_create_empty_rubric(created.id)
+
+    assert failed.status_code == 400, failed.text
+    assert failed.json()["code"] == "BAD_REQUEST"
+
+
+def test_acknowledge_rubric_staleness_requires_existing_rubric(api: ApiClient) -> None:
+    created = api.create_assessment("No Rules")
+
+    failed = api.try_acknowledge_rubric_staleness(created.id)
+
+    assert failed.status_code == 404, failed.text
+    assert failed.json()["code"] == "NOT_FOUND"
+
+
+def test_acknowledge_rubric_staleness_clears_stale_status(api: ApiClient) -> None:
+    created = api.create_assessment("Rubric Status Acknowledge")
+
+    api.set_question_set_yaml(created.id, QUESTION_SET_YAML)
+    api.set_rubric_yaml(created.id, RUBRIC_YAML)
+    api.set_question_set_yaml(created.id, QUESTION_SET_YAML)
+
+    stale = api.get_rubric(created.id)
+    assert stale.status.is_stale is True
+
+    refreshed = api.acknowledge_rubric_staleness(created.id)
+
+    assert refreshed.status.is_stale is False
+
+
 def test_rubric_coverage_stored(api: ApiClient) -> None:
     """
     Coverage using stored QuestionSet and Rubric.

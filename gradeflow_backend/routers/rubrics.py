@@ -68,6 +68,28 @@ def import_rubric(
     return svc.set_by_adapter(assessment_id, req)
 
 
+@router.post("/empty", response_model=RubricResponse, status_code=status.HTTP_201_CREATED)
+def create_empty_rubric(
+    assessment_id: str,
+    svc: RubricService = Depends(get_rubric_service),
+    _u: str = Depends(role_guard_factory("editor")),
+) -> RubricResponse:
+    return svc.create_empty_rubric(assessment_id)
+
+
+@router.post(
+    "/staleness/acknowledge",
+    response_model=RubricResponse,
+    status_code=status.HTTP_200_OK,
+)
+def acknowledge_rubric_staleness(
+    assessment_id: str,
+    svc: RubricService = Depends(get_rubric_service),
+    _u: str = Depends(role_guard_factory("editor")),
+) -> RubricResponse:
+    return svc.acknowledge_rubric_staleness(assessment_id)
+
+
 @router.post("/validate", response_model=ValidateRubricResponse, status_code=status.HTTP_200_OK)
 def validate_rubric(
     assessment_id: str,

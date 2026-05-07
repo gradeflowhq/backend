@@ -341,11 +341,89 @@ class ApiClient:
             headers=self._auth_header,
         )
 
+    def try_list_rules(self, assessment_id: str) -> Response:
+        return self.client.get(
+            f"/assessments/{assessment_id}/rules",
+            headers=self._auth_header,
+        )
+
+    def try_get_rule(self, assessment_id: str, rule_id: str) -> Response:
+        return self.client.get(
+            f"/assessments/{assessment_id}/rules/{rule_id}",
+            headers=self._auth_header,
+        )
+
+    def try_create_rule(self, assessment_id: str, rule: dict[str, object]) -> Response:
+        return self.client.post(
+            f"/assessments/{assessment_id}/rules",
+            json={"rule": rule},
+            headers=self._auth_header,
+        )
+
+    def try_update_rule(
+        self,
+        assessment_id: str,
+        rule_id: str,
+        rule: dict[str, object],
+    ) -> Response:
+        return self.client.put(
+            f"/assessments/{assessment_id}/rules/{rule_id}",
+            json={"rule": rule},
+            headers=self._auth_header,
+        )
+
+    def try_delete_rule(self, assessment_id: str, rule_id: str) -> Response:
+        return self.client.delete(
+            f"/assessments/{assessment_id}/rules/{rule_id}",
+            headers=self._auth_header,
+        )
+
+    def try_acknowledge_rubric_staleness(self, assessment_id: str) -> Response:
+        return self.client.post(
+            f"/assessments/{assessment_id}/rubric/staleness/acknowledge",
+            headers=self._auth_header,
+        )
+
+    def try_create_empty_rubric(self, assessment_id: str) -> Response:
+        return self.client.post(
+            f"/assessments/{assessment_id}/rubric/empty",
+            headers=self._auth_header,
+        )
+
     # Rubrics (success-path delegates to try-)
 
     def set_rubric_yaml(self, assessment_id: str, yaml_str: str) -> RubricResponse:
         r = self.try_set_rubric_yaml(assessment_id=assessment_id, yaml_str=yaml_str)
         assert r.status_code == 200, r.text
+        return RubricResponse.model_validate(r.json())
+
+    def create_rule(self, assessment_id: str, rule: dict[str, object]) -> RubricResponse:
+        r = self.try_create_rule(assessment_id=assessment_id, rule=rule)
+        assert r.status_code == 201, r.text
+        return RubricResponse.model_validate(r.json())
+
+    def update_rule(
+        self,
+        assessment_id: str,
+        rule_id: str,
+        rule: dict[str, object],
+    ) -> RubricResponse:
+        r = self.try_update_rule(assessment_id=assessment_id, rule_id=rule_id, rule=rule)
+        assert r.status_code == 200, r.text
+        return RubricResponse.model_validate(r.json())
+
+    def delete_rule(self, assessment_id: str, rule_id: str) -> None:
+        r = self.try_delete_rule(assessment_id=assessment_id, rule_id=rule_id)
+        assert r.status_code == 204, r.text
+
+    def acknowledge_rubric_staleness(self, assessment_id: str) -> RubricResponse:
+        r = self.try_acknowledge_rubric_staleness(assessment_id=assessment_id)
+        assert r.status_code == 200, r.text
+        return RubricResponse.model_validate(r.json())
+
+    def create_empty_rubric(self, assessment_id: str) -> RubricResponse:
+        r = self.try_create_empty_rubric(assessment_id=assessment_id)
+        assert r.status_code == 201, r.text
         return RubricResponse.model_validate(r.json())
 
     def import_rubric(

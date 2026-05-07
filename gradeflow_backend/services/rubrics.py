@@ -7,6 +7,8 @@ from gradeflow_engine.core import (
 )
 from gradeflow_engine.io.sources import DataSource
 from gradeflow_engine.rubrics.model import Rubric
+from gradeflow_engine.rules.models import QuestionRule
+from gradeflow_engine.rules.models.base import new_rule_id
 from gradeflow_engine.serializations.base import DataBlob
 
 from gradeflow_backend.models.assessment import Assessment
@@ -18,9 +20,17 @@ from gradeflow_backend.schemas.rubrics import (
     ImportRubricRequest,
     LoadRubricRequest,
     RubricResponse,
+    RuleCreateRequest,
+    RulesResponse,
+    RuleUpdateRequest,
     SetRubricByModelRequest,
     ValidateRubricRequest,
     ValidateRubricResponse,
+)
+from gradeflow_backend.services.exceptions import (
+    BadRequestError,
+    NotFoundError,
+    RubricValidationError,
 )
 from gradeflow_backend.services.yaml_artifacts import YamlArtifactService
 from gradeflow_backend.utils.filenames import make_safe_export_basename
@@ -51,6 +61,62 @@ class RubricService(YamlArtifactService[Rubric, RubricResponse, ExportRubricResp
 
     def delete(self, assessment_id: str) -> None:
         self._delete_artifact(assessment_id)
+
+    def list_rules(self, assessment_id: str) -> RulesResponse:
+        assessment = self._get_or_404(assessment_id)
+        rubric = self._load_stored_or_empty(assessment)
+        return RulesResponse(
+            rules=rubric.rules,
+            status=rubric_status(assessment),
+        )
+
+    def get_rule(self, assessment_id: str, rule_id: str) -> QuestionRule:
+        rubric = self._load_stored(self._get_or_404(assessment_id))
+        index = self._rule_index(rule_id, rubric)
+        return rubric.rules[index]
+
+    def create_rule(self, assessment_id: str, req: RuleCreateRequest) -> RubricResponse:
+        assessment = self._get_or_404(assessment_id)
+        rubric = self._load_stored_or_empty(assessment)
+        rule = req.rule.model_copy(update={"id": new_rule_id()})
+        next_rubric = Rubric(rules=[*rubric.rules, rule])
+        self._validate_or_raise(assessment, next_rubric)
+        return self._store_and_respond(assessment_id, next_rubric)
+
+    def update_rule(
+        self,
+        assessment_id: str,
+        rule_id: str,
+        req: RuleUpdateRequest,
+    ) -> RubricResponse:
+        assessment = self._get_or_404(assessment_id)
+        rubric = self._load_stored(assessment)
+        index = self._rule_index(rule_id, rubric)
+        if req.rule.id != rule_id:
+            raise BadRequestError("Rule id in request body must match path rule id")
+        rules = list(rubric.rules)
+        rules[index] = req.rule
+        next_rubric = Rubric(rules=rules)
+        self._validate_or_raise(assessment, next_rubric)
+        return self._store_and_respond(assessment_id, next_rubric)
+
+    def delete_rule(self, assessment_id: str, rule_id: str) -> None:
+        assessment = self._get_or_404(assessment_id)
+        rubric = self._load_stored(assessment)
+        index = self._rule_index(rule_id, rubric)
+        rules = [rule for i, rule in enumerate(rubric.rules) if i != index]
+        self._store_rubric_yaml(assessment_id, Rubric(rules=rules))
+
+    def acknowledge_rubric_staleness(self, assessment_id: str) -> RubricResponse:
+        assessment = self._get_or_404(assessment_id)
+        rubric = self._load_stored(assessment)
+        return self._store_and_respond(assessment_id, rubric)
+
+    def create_empty_rubric(self, assessment_id: str) -> RubricResponse:
+        assessment = self._get_or_404(assessment_id)
+        if assessment.rubric_yaml:
+            raise BadRequestError("Rubric already set")
+        return self._store_and_respond(assessment_id, Rubric(rules=[]))
 
     def validate(self, assessment_id: str, req: ValidateRubricRequest) -> ValidateRubricResponse:
         a = self._get_or_404(assessment_id)
@@ -117,6 +183,22 @@ class RubricService(YamlArtifactService[Rubric, RubricResponse, ExportRubricResp
     def _load_stored(self, assessment: Assessment) -> Rubric:
         return load_rubric(assessment)
 
+    def _load_stored_or_empty(self, assessment: Assessment) -> Rubric:
+        if not assessment.rubric_yaml:
+            return Rubric(rules=[])
+        return self._load_stored(assessment)
+
+    def _validate_or_raise(self, assessment: Assessment, rubric: Rubric) -> None:
+        errors = rubric.validate_rubric(load_question_set(assessment))
+        if errors:
+            raise RubricValidationError(errors)
+
+    def _rule_index(self, rule_id: str, rubric: Rubric) -> int:
+        for index, rule in enumerate(rubric.rules):
+            if rule.id == rule_id:
+                return index
+        raise NotFoundError(f"Rule {rule_id} not found")
+
     def _dump_to_blob(
         self,
         artifact: Rubric,
@@ -132,6 +214,10 @@ class RubricService(YamlArtifactService[Rubric, RubricResponse, ExportRubricResp
 
     def _store_yaml(self, assessment_id: str, yaml_str: str | None) -> None:
         self.repo.set_rubric_yaml(assessment_id, yaml_str)
+
+    def _store_rubric_yaml(self, assessment_id: str, rubric: Rubric) -> None:
+        blob = self._dump_to_blob(rubric, serializer_name="yaml")
+        self._store_yaml(assessment_id, blob.data.decode("utf-8"))
 
     def _build_response(self, assessment: Assessment, artifact: Rubric) -> RubricResponse:
         return RubricResponse(rubric=artifact, status=rubric_status(assessment))

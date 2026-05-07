@@ -1,6 +1,12 @@
+import re
 from datetime import datetime
+from typing import TypeAlias
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, JsonValue, field_validator
+
+AssessmentMetadata: TypeAlias = dict[str, JsonValue]
+METADATA_KEY_PATTERN = r"^[A-Za-z0-9_.:-]+$"
+_METADATA_KEY_RE = re.compile(METADATA_KEY_PATTERN)
 
 
 class AssessmentCreateRequest(BaseModel):
@@ -11,6 +17,34 @@ class AssessmentCreateRequest(BaseModel):
 class AssessmentUpdateRequest(BaseModel):
     name: str | None = Field(default=None, max_length=255)
     description: str | None = Field(default=None, max_length=2000)
+
+
+class AssessmentMetadataRequest(BaseModel):
+    metadata: AssessmentMetadata = Field(default_factory=dict)
+
+    @field_validator("metadata")
+    @classmethod
+    def validate_keys(cls, metadata: AssessmentMetadata) -> AssessmentMetadata:
+        for key in metadata:
+            if len(key) > 128 or not _METADATA_KEY_RE.fullmatch(key):
+                raise ValueError(
+                    "metadata keys must be 1-128 characters and contain only letters, "
+                    "numbers, underscores, periods, colons, or hyphens"
+                )
+        return metadata
+
+
+class AssessmentMetadataResponse(BaseModel):
+    metadata: AssessmentMetadata = Field(default_factory=dict)
+
+
+class AssessmentMetadataValueRequest(BaseModel):
+    value: JsonValue
+
+
+class AssessmentMetadataValueResponse(BaseModel):
+    key: str
+    value: JsonValue
 
 
 class AssessmentCoverage(BaseModel):

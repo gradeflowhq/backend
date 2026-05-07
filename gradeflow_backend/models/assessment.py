@@ -1,7 +1,8 @@
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, String, Text, func
+from pydantic import JsonValue
+from sqlalchemy import JSON, DateTime, String, Text, func
 from sqlalchemy.dialects.mysql import MEDIUMTEXT
 from sqlalchemy.ext.associationproxy import AssociationProxy, association_proxy
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -19,6 +20,9 @@ class Assessment(Base):
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     name: Mapped[str] = mapped_column(String(255))
     description: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    metadata_json: Mapped[dict[str, JsonValue] | None] = mapped_column(
+        "metadata", JSON, nullable=True, default=dict
+    )
 
     question_set_yaml: Mapped[str | None] = mapped_column(Text, nullable=True)
     rubric_yaml: Mapped[str | None] = mapped_column(Text, nullable=True)

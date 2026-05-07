@@ -12,11 +12,16 @@ from gradeflow_backend.repositories.submissions import SubmissionRepository
 from gradeflow_backend.schemas.assessments import (
     AssessmentCoverage,
     AssessmentCreateRequest,
+    AssessmentMetadataRequest,
+    AssessmentMetadataResponse,
+    AssessmentMetadataValueRequest,
+    AssessmentMetadataValueResponse,
     AssessmentResponse,
     AssessmentSummary,
     AssessmentUpdateRequest,
 )
 from gradeflow_backend.services.base import BaseService
+from gradeflow_backend.services.exceptions import NotFoundError
 from gradeflow_backend.utils.datetime import ensure_utc
 from gradeflow_backend.utils.loaders import load_question_set, load_rubric
 
@@ -123,6 +128,35 @@ class AssessmentService(BaseService):
 
     def delete(self, assessment_id: str) -> None:
         self.repo.delete(self._get_or_404(assessment_id).id)
+
+    def get_metadata(self, assessment_id: str) -> AssessmentMetadataResponse:
+        a = self._get_or_404(assessment_id)
+        return AssessmentMetadataResponse(metadata=self.repo.get_metadata(a.id))
+
+    def replace_metadata(
+        self, assessment_id: str, req: AssessmentMetadataRequest
+    ) -> AssessmentMetadataResponse:
+        a = self._get_or_404(assessment_id)
+        metadata = self.repo.replace_metadata(a.id, dict(req.metadata))
+        return AssessmentMetadataResponse(metadata=metadata)
+
+    def get_metadata_value(self, assessment_id: str, key: str) -> AssessmentMetadataValueResponse:
+        a = self._get_or_404(assessment_id)
+        metadata = self.repo.get_metadata(a.id)
+        if key not in metadata:
+            raise NotFoundError("Assessment metadata key not found")
+        return AssessmentMetadataValueResponse(key=key, value=metadata[key])
+
+    def set_metadata_value(
+        self, assessment_id: str, key: str, req: AssessmentMetadataValueRequest
+    ) -> AssessmentMetadataValueResponse:
+        a = self._get_or_404(assessment_id)
+        metadata = self.repo.set_metadata_value(a.id, key, req.value)
+        return AssessmentMetadataValueResponse(key=key, value=metadata[key])
+
+    def delete_metadata_value(self, assessment_id: str, key: str) -> None:
+        a = self._get_or_404(assessment_id)
+        self.repo.delete_metadata_value(a.id, key)
 
     def list_for_user(self, user_id: str) -> list[AssessmentResponse]:
         assessments = self.memberships.list_user_assessments(user_id)

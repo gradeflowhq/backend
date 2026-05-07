@@ -20,6 +20,48 @@ def test_assessment_crud(api: ApiClient) -> None:
     assert not any(item.id == created.id for item in lst.items)
 
 
+def test_assessment_metadata_crud(api: ApiClient) -> None:
+    created = api.create_assessment("Metadata Test")
+
+    empty = api.get_assessment_metadata(created.id)
+    assert empty.metadata == {}
+
+    publish_config = {
+        "courseId": "123",
+        "assignmentGroupId": "456",
+        "assignmentId": "789",
+        "gradeMode": "points",
+        "includeQuestionRemarks": True,
+        "rounding": {"enabled": True, "base": 0.5},
+    }
+    item = api.set_assessment_metadata_value(
+        created.id,
+        "canvas_publish_config",
+        publish_config,
+    )
+    assert item.key == "canvas_publish_config"
+    assert item.value == publish_config
+
+    got_item = api.get_assessment_metadata_value(created.id, "canvas_publish_config")
+    assert got_item.value == publish_config
+
+    all_metadata = api.get_assessment_metadata(created.id)
+    assert all_metadata.metadata == {"canvas_publish_config": publish_config}
+
+    replaced = api.replace_assessment_metadata(created.id, {"reviewed": True})
+    assert replaced.metadata == {"reviewed": True}
+
+    api.delete_assessment_metadata_value(created.id, "reviewed")
+    assert api.get_assessment_metadata(created.id).metadata == {}
+
+
+def test_missing_assessment_metadata_key_returns_404(api: ApiClient) -> None:
+    created = api.create_assessment("Missing Metadata")
+
+    r = api.try_get_assessment_metadata_value(created.id, "missing")
+    assert r.status_code == 404, r.text
+
+
 def test_assessment_list_summary_no_data(api: ApiClient) -> None:
     api.create_assessment("Empty Assessment")
     lst = api.list_assessments()
@@ -75,6 +117,17 @@ def test_assessment_update_non_owner_forbidden(api: ApiClient) -> None:
     api.add_member(created.id, user_email="editor2@example.com", role="editor")
 
     r = other.try_update_assessment(created.id, name="Hijacked")
+    assert r.status_code == 403, r.text
+
+
+def test_assessment_metadata_write_requires_editor(api: ApiClient) -> None:
+    other = api.create_other_user("viewer-metadata@example.com")
+
+    created = api.create_assessment("Metadata Permission")
+    api.add_member(created.id, user_email="viewer-metadata@example.com", role="viewer")
+
+    assert other.get_assessment_metadata(created.id).metadata == {}
+    r = other.try_set_assessment_metadata_value(created.id, "canvas_publish_config", {})
     assert r.status_code == 403, r.text
 
 

@@ -1,6 +1,7 @@
 import uuid
 
 import valkey
+from pydantic import JsonValue
 from sqlalchemy.exc import NoResultFound
 from sqlalchemy.orm import Session
 
@@ -47,6 +48,37 @@ class AssessmentRepository(BaseRepository):
     def delete(self, id: str) -> None:
         a = self.get(id)
         self.session().delete(a)
+        self.session().flush()
+
+    # ------------------------------------------------------------------
+    # Metadata
+    # ------------------------------------------------------------------
+
+    def get_metadata(self, id: str) -> dict[str, JsonValue]:
+        a = self.get(id)
+        return dict(a.metadata_json or {})
+
+    def replace_metadata(self, id: str, metadata: dict[str, JsonValue]) -> dict[str, JsonValue]:
+        a = self.get(id)
+        a.metadata_json = dict(metadata)
+        self.session().flush()
+        return dict(a.metadata_json or {})
+
+    def set_metadata_value(self, id: str, key: str, value: JsonValue) -> dict[str, JsonValue]:
+        a = self.get(id)
+        metadata = dict(a.metadata_json or {})
+        metadata[key] = value
+        a.metadata_json = metadata
+        self.session().flush()
+        return dict(a.metadata_json or {})
+
+    def delete_metadata_value(self, id: str, key: str) -> None:
+        a = self.get(id)
+        metadata = dict(a.metadata_json or {})
+        if key not in metadata:
+            return
+        del metadata[key]
+        a.metadata_json = metadata
         self.session().flush()
 
     # ------------------------------------------------------------------

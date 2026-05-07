@@ -4,6 +4,8 @@ from fastapi.testclient import TestClient
 from httpx import Response
 
 from gradeflow_backend.schemas.assessments import (
+    AssessmentMetadataResponse,
+    AssessmentMetadataValueResponse,
     AssessmentResponse,
     AssessmentsListResponse,
 )
@@ -124,6 +126,35 @@ class ApiClient:
     def try_delete_assessment(self, id: str) -> Response:
         return self.client.delete(f"/assessments/{id}", headers=self._auth_header)
 
+    def try_get_assessment_metadata(self, id: str) -> Response:
+        return self.client.get(f"/assessments/{id}/metadata", headers=self._auth_header)
+
+    def try_replace_assessment_metadata(self, id: str, metadata: dict[str, object]) -> Response:
+        return self.client.put(
+            f"/assessments/{id}/metadata",
+            json={"metadata": metadata},
+            headers=self._auth_header,
+        )
+
+    def try_get_assessment_metadata_value(self, id: str, key: str) -> Response:
+        return self.client.get(
+            f"/assessments/{id}/metadata/{key}",
+            headers=self._auth_header,
+        )
+
+    def try_set_assessment_metadata_value(self, id: str, key: str, value: object) -> Response:
+        return self.client.put(
+            f"/assessments/{id}/metadata/{key}",
+            json={"value": value},
+            headers=self._auth_header,
+        )
+
+    def try_delete_assessment_metadata_value(self, id: str, key: str) -> Response:
+        return self.client.delete(
+            f"/assessments/{id}/metadata/{key}",
+            headers=self._auth_header,
+        )
+
     # Assessments (success-path delegates to try-)
 
     def create_assessment(self, name: str, description: str | None = None) -> AssessmentResponse:
@@ -153,6 +184,34 @@ class ApiClient:
 
     def delete_assessment(self, id: str) -> None:
         r = self.try_delete_assessment(id=id)
+        assert r.status_code == 204, r.text
+
+    def get_assessment_metadata(self, id: str) -> AssessmentMetadataResponse:
+        r = self.try_get_assessment_metadata(id=id)
+        assert r.status_code == 200, r.text
+        return AssessmentMetadataResponse.model_validate(r.json())
+
+    def replace_assessment_metadata(
+        self, id: str, metadata: dict[str, object]
+    ) -> AssessmentMetadataResponse:
+        r = self.try_replace_assessment_metadata(id=id, metadata=metadata)
+        assert r.status_code == 200, r.text
+        return AssessmentMetadataResponse.model_validate(r.json())
+
+    def get_assessment_metadata_value(self, id: str, key: str) -> AssessmentMetadataValueResponse:
+        r = self.try_get_assessment_metadata_value(id=id, key=key)
+        assert r.status_code == 200, r.text
+        return AssessmentMetadataValueResponse.model_validate(r.json())
+
+    def set_assessment_metadata_value(
+        self, id: str, key: str, value: object
+    ) -> AssessmentMetadataValueResponse:
+        r = self.try_set_assessment_metadata_value(id=id, key=key, value=value)
+        assert r.status_code == 200, r.text
+        return AssessmentMetadataValueResponse.model_validate(r.json())
+
+    def delete_assessment_metadata_value(self, id: str, key: str) -> None:
+        r = self.try_delete_assessment_metadata_value(id=id, key=key)
         assert r.status_code == 204, r.text
 
     # -----------------

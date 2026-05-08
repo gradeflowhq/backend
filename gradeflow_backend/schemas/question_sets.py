@@ -4,7 +4,7 @@ from gradeflow_engine.question_sets.inference import (
     DEFAULT_CHOICE_OPTION_LIMIT,
     DEFAULT_MULTI_VALUE_DELIMITER,
 )
-from gradeflow_engine.question_sets.model import QuestionSet
+from gradeflow_engine.question_sets.model import QuestionSet, QuestionSetDrift
 from gradeflow_engine.questions.models import Question
 from gradeflow_engine.questions.types import QuestionId
 from gradeflow_engine.serializations.question_set import QuestionSetSerializerConfig
@@ -40,6 +40,11 @@ class ImportQuestionSetRequest(BaseModel):
 class QuestionSetResponse(BaseModel):
     question_set: QuestionSet
     status: SectionStatus
+
+
+class QuestionSetStatusResponse(BaseModel):
+    status: SectionStatus
+    drift: QuestionSetDrift
 
 
 class ExportQuestionSetRequest(BaseModel):

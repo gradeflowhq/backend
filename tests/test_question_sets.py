@@ -1,3 +1,5 @@
+from gradeflow_engine.questions.models import ChoiceQuestion
+
 from tests.helpers.api import ApiClient
 from tests.helpers.data import QUESTION_SET_YAML, SUBMISSIONS_CSV
 
@@ -109,6 +111,31 @@ def test_question_set_status_clears_after_resave(api: ApiClient) -> None:
     assert refreshed.status.is_stale is False
 
 
+def test_acknowledge_question_set_staleness_requires_existing_question_set(
+    api: ApiClient,
+) -> None:
+    created = api.create_assessment("Question Set Acknowledge Missing")
+
+    failed = api.try_acknowledge_question_set_staleness(created.id)
+
+    assert failed.status_code == 404, failed.text
+    assert failed.json()["code"] == "NOT_FOUND"
+
+
+def test_acknowledge_question_set_staleness_clears_stale_status(api: ApiClient) -> None:
+    created = api.create_assessment("Question Set Acknowledge")
+    api.set_question_set_yaml(created.id, QUESTION_SET_YAML)
+    api.set_submissions_csv(created.id, SUBMISSIONS_CSV)
+
+    stale = api.get_question_set(created.id)
+    assert stale.status.is_stale is True
+
+    refreshed = api.acknowledge_question_set_staleness(created.id)
+
+    assert refreshed.status.is_stale is False
+    assert refreshed.question_set.question_map == stale.question_set.question_map
+
+
 def test_question_set_export(api: ApiClient) -> None:
     created = api.create_assessment("Question Set Export")
     api.set_question_set_yaml(created.id, QUESTION_SET_YAML)
@@ -119,3 +146,62 @@ def test_question_set_export(api: ApiClient) -> None:
     assert exported.media_type
     assert exported.filename == "question-set-export-questions.yaml"
     assert b"question_map:" in exported.data
+
+
+def test_question_set_status_reports_drift_and_sync_clears_it(api: ApiClient) -> None:
+    created = api.create_assessment("Question Set Sync")
+    api.set_question_set_yaml(
+        created.id,
+        """
+question_map:
+  q1:
+    type: TEXT
+    description: "Keep this prompt"
+    max_points: 2.0
+  q2:
+    type: CHOICE
+    max_points: 3.0
+    options:
+      - A
+    allow_multiple: false
+    config:
+      delimiter: ","
+      trim_whitespace: true
+      normalize_case: false
+  q3:
+    type: TEXT
+""",
+    )
+    api.set_submissions_csv(
+        created.id,
+        'student_id,q1,q2,q4\ns1,Alice,"A, B",10\ns2,Bob,C,12\n',
+    )
+
+    status = api.get_question_set_status(created.id)
+
+    assert status.status.is_stale is True
+    assert status.drift.has_drift is True
+    assert status.drift.missing_question_ids == ["q4"]
+    assert status.drift.extra_question_ids == ["q3"]
+    assert len(status.drift.choice_option_drifts) == 1
+    choice_drift = status.drift.choice_option_drifts[0]
+    assert choice_drift.question_id == "q2"
+    assert choice_drift.missing_options == ["B", "C"]
+
+    synced = api.sync_question_set(created.id)
+
+    question_map = synced.question_set.question_map
+    assert list(question_map) == ["q1", "q2", "q4"]
+    assert question_map["q1"].description == "Keep this prompt"
+    assert question_map["q1"].max_points == 2.0
+
+    q2 = question_map["q2"]
+    assert isinstance(q2, ChoiceQuestion)
+    assert q2.options == {"A", "B", "C"}
+    assert q2.allow_multiple is False
+    assert q2.max_points == 3.0
+    assert synced.status.is_stale is False
+
+    refreshed_status = api.get_question_set_status(created.id)
+    assert refreshed_status.status.is_stale is False
+    assert refreshed_status.drift.has_drift is False

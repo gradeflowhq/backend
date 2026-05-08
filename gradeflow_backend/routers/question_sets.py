@@ -13,6 +13,7 @@ from gradeflow_backend.schemas.question_sets import (
     ParseSubmissionsResponse,
     QuestionCreateRequest,
     QuestionSetResponse,
+    QuestionSetStatusResponse,
     QuestionUpdateRequest,
     SetQuestionSetByModelRequest,
 )
@@ -28,6 +29,37 @@ def get_question_set(
     _u: str = Depends(member_guard_factory()),
 ) -> QuestionSetResponse:
     return svc.get(assessment_id)
+
+
+@router.get("/status", response_model=QuestionSetStatusResponse)
+def get_question_set_status(
+    assessment_id: str,
+    svc: QuestionSetService = Depends(get_question_set_service),
+    _u: str = Depends(member_guard_factory()),
+) -> QuestionSetStatusResponse:
+    return svc.get_status(assessment_id)
+
+
+@router.post("/sync", response_model=QuestionSetResponse, status_code=status.HTTP_200_OK)
+def sync_question_set(
+    assessment_id: str,
+    svc: QuestionSetService = Depends(get_question_set_service),
+    _u: str = Depends(role_guard_factory("editor")),
+) -> QuestionSetResponse:
+    return svc.sync(assessment_id)
+
+
+@router.post(
+    "/staleness/acknowledge",
+    response_model=QuestionSetResponse,
+    status_code=status.HTTP_200_OK,
+)
+def acknowledge_question_set_staleness(
+    assessment_id: str,
+    svc: QuestionSetService = Depends(get_question_set_service),
+    _u: str = Depends(role_guard_factory("editor")),
+) -> QuestionSetResponse:
+    return svc.acknowledge_question_set_staleness(assessment_id)
 
 
 @router.post("/export", response_model=ExportQuestionSetResponse, status_code=status.HTTP_200_OK)

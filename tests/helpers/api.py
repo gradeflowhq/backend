@@ -21,6 +21,7 @@ from gradeflow_backend.schemas.question_sets import (
     ExportQuestionSetResponse,
     ParseSubmissionsResponse,
     QuestionSetResponse,
+    QuestionSetStatusResponse,
 )
 from gradeflow_backend.schemas.roles import Role
 from gradeflow_backend.schemas.rubrics import (
@@ -241,6 +242,24 @@ class ApiClient:
             headers=self._auth_header,
         )
 
+    def try_get_question_set_status(self, assessment_id: str) -> Response:
+        return self.client.get(
+            f"/assessments/{assessment_id}/question-set/status",
+            headers=self._auth_header,
+        )
+
+    def try_sync_question_set(self, assessment_id: str) -> Response:
+        return self.client.post(
+            f"/assessments/{assessment_id}/question-set/sync",
+            headers=self._auth_header,
+        )
+
+    def try_acknowledge_question_set_staleness(self, assessment_id: str) -> Response:
+        return self.client.post(
+            f"/assessments/{assessment_id}/question-set/staleness/acknowledge",
+            headers=self._auth_header,
+        )
+
     def try_delete_question_set(self, assessment_id: str) -> Response:
         return self.client.delete(
             f"/assessments/{assessment_id}/question-set",
@@ -313,6 +332,21 @@ class ApiClient:
 
     def get_question_set(self, assessment_id: str) -> QuestionSetResponse:
         r = self.try_get_question_set(assessment_id=assessment_id)
+        assert r.status_code == 200, r.text
+        return QuestionSetResponse.model_validate(r.json())
+
+    def get_question_set_status(self, assessment_id: str) -> QuestionSetStatusResponse:
+        r = self.try_get_question_set_status(assessment_id=assessment_id)
+        assert r.status_code == 200, r.text
+        return QuestionSetStatusResponse.model_validate(r.json())
+
+    def sync_question_set(self, assessment_id: str) -> QuestionSetResponse:
+        r = self.try_sync_question_set(assessment_id=assessment_id)
+        assert r.status_code == 200, r.text
+        return QuestionSetResponse.model_validate(r.json())
+
+    def acknowledge_question_set_staleness(self, assessment_id: str) -> QuestionSetResponse:
+        r = self.try_acknowledge_question_set_staleness(assessment_id=assessment_id)
         assert r.status_code == 200, r.text
         return QuestionSetResponse.model_validate(r.json())
 

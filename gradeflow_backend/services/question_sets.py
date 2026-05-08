@@ -23,6 +23,7 @@ from gradeflow_backend.schemas.question_sets import (
     ParseSubmissionsResponse,
     QuestionCreateRequest,
     QuestionSetResponse,
+    QuestionSetStatusResponse,
     QuestionUpdateRequest,
     SetQuestionSetByModelRequest,
 )
@@ -57,6 +58,26 @@ class QuestionSetService(
 
     def get(self, assessment_id: str) -> QuestionSetResponse:
         return self._get_response(assessment_id)
+
+    def get_status(self, assessment_id: str) -> QuestionSetStatusResponse:
+        assessment = self._get_or_404(assessment_id)
+        question_set = self._load_stored_or_empty(assessment)
+        raw_submissions = derive_raw_submissions(assessment)
+        return QuestionSetStatusResponse(
+            status=question_set_status(assessment),
+            drift=question_set.get_drift(raw_submissions),
+        )
+
+    def sync(self, assessment_id: str) -> QuestionSetResponse:
+        assessment = self._get_or_404(assessment_id)
+        question_set = self._load_stored_or_empty(assessment)
+        synced_question_set = question_set.sync_from_submissions(derive_raw_submissions(assessment))
+        return self._store_and_respond(assessment_id, synced_question_set)
+
+    def acknowledge_question_set_staleness(self, assessment_id: str) -> QuestionSetResponse:
+        assessment = self._get_or_404(assessment_id)
+        question_set = self._load_stored(assessment)
+        return self._store_and_respond(assessment_id, question_set)
 
     def export(
         self, assessment_id: str, req: ExportQuestionSetRequest

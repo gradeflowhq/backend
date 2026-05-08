@@ -3,12 +3,11 @@ from fastapi import APIRouter, Depends, status
 from gradeflow_backend.dependencies.memberships import member_guard_factory, role_guard_factory
 from gradeflow_backend.dependencies.services import get_rubric_service
 from gradeflow_backend.schemas.rubrics import (
-    CoverageRequest,
-    CoverageResponse,
     ExportRubricRequest,
     ExportRubricResponse,
     ImportRubricRequest,
     LoadRubricRequest,
+    RubricOverviewResponse,
     RubricResponse,
     SetRubricByModelRequest,
     ValidateRubricRequest,
@@ -100,14 +99,22 @@ def validate_rubric(
     return svc.validate(assessment_id, req)
 
 
-@router.post("/coverage", response_model=CoverageResponse, status_code=status.HTTP_200_OK)
-def rubric_coverage(
+@router.post("/sync", response_model=RubricResponse, status_code=status.HTTP_200_OK)
+def sync_rubric(
     assessment_id: str,
-    req: CoverageRequest,
+    svc: RubricService = Depends(get_rubric_service),
+    _u: str = Depends(role_guard_factory("editor")),
+) -> RubricResponse:
+    return svc.sync_stale_rules(assessment_id)
+
+
+@router.get("/overview", response_model=RubricOverviewResponse, status_code=status.HTTP_200_OK)
+def rubric_overview(
+    assessment_id: str,
     svc: RubricService = Depends(get_rubric_service),
     _u: str = Depends(member_guard_factory()),
-) -> CoverageResponse:
-    return svc.coverage(assessment_id, req)
+) -> RubricOverviewResponse:
+    return svc.overview(assessment_id)
 
 
 @router.delete("", status_code=status.HTTP_204_NO_CONTENT)

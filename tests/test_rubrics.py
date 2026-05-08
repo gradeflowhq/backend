@@ -168,7 +168,7 @@ def test_acknowledge_rubric_staleness_clears_stale_status(api: ApiClient) -> Non
     assert refreshed.status.is_stale is False
 
 
-def test_rubric_coverage_stored(api: ApiClient) -> None:
+def test_rubric_overview_includes_stored_coverage(api: ApiClient) -> None:
     """
     Coverage using stored QuestionSet and Rubric.
     QUESTION_SET_YAML has q1 (TEXT), q2 (NUMERIC), q3 (CHOICE), q4 (MULTI_VALUED).
@@ -179,38 +179,110 @@ def test_rubric_coverage_stored(api: ApiClient) -> None:
     api.set_question_set_yaml(created.id, QUESTION_SET_YAML)
     api.set_rubric_yaml(created.id, RUBRIC_YAML)
 
-    cov = api.rubric_coverage(assessment_id=created.id).coverage
+    cov = api.get_rubric_overview(created.id).coverage
 
     assert cov.total == 4
     assert cov.covered == 4
     assert cov.percentage == 1.0
     assert set(cov.question_ids) == {"q1", "q2", "q3", "q4"}
     assert set(cov.covered_question_ids) == {"q1", "q2", "q3", "q4"}
+    assert set(cov.uncovered_question_ids) == set()
+    assert set(cov.question_rules) == {"q1", "q2", "q3", "q4"}
+    assert cov.global_rules == {}
 
 
-def test_rubric_coverage_inline(api: ApiClient) -> None:
-    """
-    Coverage using inline QuestionSet and Rubric payloads (not stored).
-    Provide the same YAMLs inline and expect full coverage.
-    """
-    created = api.create_assessment("Midterm Coverage Inline")
+def test_rubric_overview_coverage_includes_rule_maps(api: ApiClient) -> None:
+    created = api.create_assessment("Rubric Coverage Rule Maps")
+    api.set_question_set_yaml(created.id, QUESTION_SET_YAML)
+    api.set_rubric_yaml(
+        created.id,
+        """
+rules:
+  - id: direct-q1
+    type: MANUAL
+    question_id: q1
+  - id: global-q23
+    type: PROGRAMMABLE_MULTI
+    target_question_ids:
+      - q2
+      - q3
+""",
+    )
 
-    qset_dict = yaml.safe_load(QUESTION_SET_YAML)
-    rubric_dict = yaml.safe_load(RUBRIC_YAML)
+    overview = api.get_rubric_overview(created.id)
+    coverage = overview.coverage
 
-    cov = api.rubric_coverage(
-        assessment_id=created.id,
-        use_stored_rubric=False,
-        use_stored_question_set=False,
-        rubric=rubric_dict,
-        question_set=qset_dict,
-    ).coverage
+    assert [rule.id for rule in overview.question_rules] == ["direct-q1"]
+    assert [rule.id for rule in overview.global_rules] == ["global-q23"]
+    assert coverage.question_rules == {"q1": "direct-q1"}
+    assert coverage.global_rules == {"q2": "global-q23", "q3": "global-q23"}
+    assert coverage.questions_by_rule == {
+        "direct-q1": {"q1"},
+        "global-q23": {"q2", "q3"},
+    }
+    assert set(coverage.uncovered_question_ids) == {"q4"}
 
-    assert cov.total == 4
-    assert cov.covered == 4
-    assert cov.percentage == 1.0
-    assert set(cov.question_ids) == {"q1", "q2", "q3", "q4"}
-    assert set(cov.covered_question_ids) == {"q1", "q2", "q3", "q4"}
+
+def test_rubric_stale_rules_sync_removes_top_level_rules(api: ApiClient) -> None:
+    created = api.create_assessment("Stale Rules")
+    api.set_question_set_yaml(created.id, QUESTION_SET_YAML)
+    api.set_rubric_yaml(
+        created.id,
+        """
+rules:
+  - id: keep-q1
+    type: MANUAL
+    question_id: q1
+  - id: stale-qx
+    type: MANUAL
+    question_id: qx
+  - id: stale-global
+    type: PROGRAMMABLE_MULTI
+    target_question_ids:
+      - q2
+      - qz
+""",
+    )
+
+    stale_rules = api.get_rubric_overview(created.id).stale_rules
+    synced = api.sync_rubric(created.id)
+
+    assert [(rule.rule_id, rule.qids) for rule in stale_rules] == [
+        ("stale-qx", ["qx"]),
+        ("stale-global", ["qz"]),
+    ]
+    assert [rule.id for rule in synced.rubric.rules] == ["keep-q1"]
+    assert api.get_rubric_overview(created.id).stale_rules == []
+
+
+def test_rubric_overview_returns_rules_coverage_stale_rules_and_status(api: ApiClient) -> None:
+    created = api.create_assessment("Rubric Overview")
+    api.set_question_set_yaml(created.id, QUESTION_SET_YAML)
+    api.set_rubric_yaml(
+        created.id,
+        """
+rules:
+  - id: keep-q1
+    type: MANUAL
+    question_id: q1
+  - id: stale-qx
+    type: MANUAL
+    question_id: qx
+""",
+    )
+
+    overview = api.get_rubric_overview(created.id)
+
+    assert [rule.id for rule in overview.question_rules] == ["keep-q1", "stale-qx"]
+    assert overview.global_rules == []
+    assert overview.coverage.question_rules == {"q1": "keep-q1"}
+    assert overview.coverage.total == 4
+    assert overview.coverage.covered == 1
+    assert set(overview.coverage.uncovered_question_ids) == {"q2", "q3", "q4"}
+    assert [(rule.rule_id, rule.qids) for rule in overview.stale_rules] == [
+        ("stale-qx", ["qx"]),
+    ]
+    assert overview.status.is_stale is False
 
 
 def test_rubric_import_examplify_adapter_and_validate(api: ApiClient) -> None:

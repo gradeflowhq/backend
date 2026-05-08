@@ -24,8 +24,8 @@ from gradeflow_backend.schemas.question_sets import (
 )
 from gradeflow_backend.schemas.roles import Role
 from gradeflow_backend.schemas.rubrics import (
-    CoverageResponse,
     ExportRubricResponse,
+    RubricOverviewResponse,
     RubricResponse,
     ValidateRubricResponse,
 )
@@ -390,6 +390,18 @@ class ApiClient:
             headers=self._auth_header,
         )
 
+    def try_sync_rubric(self, assessment_id: str) -> Response:
+        return self.client.post(
+            f"/assessments/{assessment_id}/rubric/sync",
+            headers=self._auth_header,
+        )
+
+    def try_get_rubric_overview(self, assessment_id: str) -> Response:
+        return self.client.get(
+            f"/assessments/{assessment_id}/rubric/overview",
+            headers=self._auth_header,
+        )
+
     # Rubrics (success-path delegates to try-)
 
     def set_rubric_yaml(self, assessment_id: str, yaml_str: str) -> RubricResponse:
@@ -426,6 +438,16 @@ class ApiClient:
         assert r.status_code == 201, r.text
         return RubricResponse.model_validate(r.json())
 
+    def sync_rubric(self, assessment_id: str) -> RubricResponse:
+        r = self.try_sync_rubric(assessment_id=assessment_id)
+        assert r.status_code == 200, r.text
+        return RubricResponse.model_validate(r.json())
+
+    def get_rubric_overview(self, assessment_id: str) -> RubricOverviewResponse:
+        r = self.try_get_rubric_overview(assessment_id=assessment_id)
+        assert r.status_code == 200, r.text
+        return RubricOverviewResponse.model_validate(r.json())
+
     def import_rubric(
         self, assessment_id: str, *, data: str, adapter: dict[str, object]
     ) -> RubricResponse:
@@ -455,86 +477,6 @@ class ApiClient:
         r = self.try_export_rubric(assessment_id=assessment_id)
         assert r.status_code == 200, r.text
         return ExportRubricResponse.model_validate(r.json())
-
-    # -----------------
-    # Rubrics Coverage (try-variants)
-    # -----------------
-
-    def try_rubric_coverage(
-        self,
-        assessment_id: str,
-        *,
-        use_stored_rubric: bool = True,
-        use_stored_question_set: bool = True,
-        rubric: dict[str, object] | None = None,
-        question_set: dict[str, object] | None = None,
-    ) -> Response:
-        """
-        Call coverage endpoint. By default uses stored rubric and question set.
-        If use_stored_rubric/question_set are False, provide 'rubric' and/or 'question_set' dicts.
-        """
-        payload: dict[str, object] = {
-            "use_stored_rubric": use_stored_rubric,
-            "use_stored_question_set": use_stored_question_set,
-        }
-        if rubric is not None:
-            payload["rubric"] = rubric
-        if question_set is not None:
-            payload["question_set"] = question_set
-
-        return self.client.post(
-            f"/assessments/{assessment_id}/rubric/coverage",
-            json=payload,
-            headers=self._auth_header,
-        )
-
-    # Rubrics Coverage (success-path delegates to try-)
-
-    def rubric_coverage(
-        self,
-        assessment_id: str,
-        *,
-        use_stored_rubric: bool = True,
-        use_stored_question_set: bool = True,
-        rubric: dict[str, object] | None = None,
-        question_set: dict[str, object] | None = None,
-    ) -> CoverageResponse:
-        """
-        Convenience wrapper returning typed CoverageResponse.
-        """
-        r = self.try_rubric_coverage(
-            assessment_id,
-            use_stored_rubric=use_stored_rubric,
-            use_stored_question_set=use_stored_question_set,
-            rubric=rubric,
-            question_set=question_set,
-        )
-        assert r.status_code == 200, r.text
-        return CoverageResponse.model_validate(r.json())
-
-    def rubric_coverage_stored(self, assessment_id: str) -> CoverageResponse:
-        """
-        Coverage using stored rubric and question set (defaults).
-        """
-        return self.rubric_coverage(assessment_id)
-
-    def rubric_coverage_inline(
-        self,
-        assessment_id: str,
-        *,
-        rubric: dict[str, object],
-        question_set: dict[str, object],
-    ) -> CoverageResponse:
-        """
-        Coverage using inline rubric and question set (sets use_stored_* to False).
-        """
-        return self.rubric_coverage(
-            assessment_id,
-            use_stored_rubric=False,
-            use_stored_question_set=False,
-            rubric=rubric,
-            question_set=question_set,
-        )
 
     # -----------------
     # Submissions (try-variants)

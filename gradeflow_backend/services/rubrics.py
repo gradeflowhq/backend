@@ -13,12 +13,11 @@ from gradeflow_engine.serializations.base import DataBlob
 
 from gradeflow_backend.models.assessment import Assessment
 from gradeflow_backend.schemas.rubrics import (
-    CoverageRequest,
-    CoverageResponse,
     ExportRubricRequest,
     ExportRubricResponse,
     ImportRubricRequest,
     LoadRubricRequest,
+    RubricOverviewResponse,
     RubricResponse,
     RuleCreateRequest,
     RulesResponse,
@@ -134,21 +133,23 @@ class RubricService(YamlArtifactService[Rubric, RubricResponse, ExportRubricResp
         )
         return ValidateRubricResponse(errors=rubric.validate_rubric(question_set))
 
-    def coverage(self, assessment_id: str, req: CoverageRequest) -> CoverageResponse:
-        a = self._get_or_404(assessment_id)
-        rubric = resolve_or_require(
-            use_stored=req.use_stored_rubric,
-            load=lambda: load_rubric(a),
-            override=req.rubric,
-            field_name="rubric",
+    def sync_stale_rules(self, assessment_id: str) -> RubricResponse:
+        assessment = self._get_or_404(assessment_id)
+        rubric = self._load_stored(assessment)
+        question_set = load_question_set(assessment)
+        return self._store_and_respond(assessment_id, rubric.remove_stale_rules(question_set))
+
+    def overview(self, assessment_id: str) -> RubricOverviewResponse:
+        assessment = self._get_or_404(assessment_id)
+        rubric = self._load_stored(assessment)
+        question_set = load_question_set(assessment)
+        return RubricOverviewResponse(
+            question_rules=[rule for rule in rubric.rules if rule.scope == "question"],
+            global_rules=[rule for rule in rubric.rules if rule.scope == "global"],
+            coverage=rubric.get_coverage(question_set),
+            stale_rules=rubric.get_stale_rule_references(question_set),
+            status=rubric_status(assessment),
         )
-        question_set = resolve_or_require(
-            use_stored=req.use_stored_question_set,
-            load=lambda: load_question_set(a),
-            override=req.question_set,
-            field_name="question_set",
-        )
-        return CoverageResponse(coverage=rubric.get_coverage(question_set))
 
     # ------------------------------------------------------------------
     # Private helpers

@@ -4,8 +4,10 @@ from typing import Any, TypeAlias, cast
 
 import pytest
 from fastapi.testclient import TestClient
+from gradeflow_engine.rubrics.model import RubricCoverage
 from gradeflow_engine.rules.models.length import LengthRule
 from gradeflow_engine.rules.models.numeric_range import NumericRangeRule
+from gradeflow_engine.rules.models.text_match import TextMatchQuestionRule
 
 from gradeflow_backend.main import app
 from gradeflow_backend.openapi import convert_primitive_anyof_merge_equal_or_absent
@@ -295,6 +297,44 @@ def test_patcher_preserves_discriminated_unions_where_used() -> None:
         assert items_schema["type"] == "object"
     discriminator2 = items_schema.get("discriminator")
     assert isinstance(discriminator2, dict) and "propertyName" in discriminator2
+
+
+def test_openapi_response_schemas_require_serialized_defaults() -> None:
+    openapi: OpenAPI = _client_openapi()
+
+    paths = openapi.get("paths")
+    assert isinstance(paths, dict)
+    assert "/assessments/{assessment_id}/rubric/coverage" not in paths
+    assert "/assessments/{assessment_id}/rubric/stale-rules" not in paths
+
+    coverage_schema = _get_schema(openapi, RubricCoverage)
+    assert set(coverage_schema["required"]) >= {
+        "question_ids",
+        "covered_question_ids",
+        "uncovered_question_ids",
+        "question_rules",
+        "global_rules",
+        "questions_by_rule",
+        "total",
+        "covered",
+        "percentage",
+    }
+
+    rule_output_schema = _get_schema(openapi, TextMatchQuestionRule, "TextMatchQuestionRule-Output")
+    assert set(rule_output_schema["required"]) >= {
+        "id",
+        "question_types",
+        "constraints",
+        "scope",
+        "question_id",
+        "type",
+        "display_name",
+        "answers",
+        "description",
+    }
+
+    rule_input_schema = _get_schema(openapi, TextMatchQuestionRule, "TextMatchQuestionRule-Input")
+    assert set(rule_input_schema["required"]) == {"question_id", "answers"}
 
 
 def test_other_backend_response_shapes() -> None:

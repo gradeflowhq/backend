@@ -1,7 +1,15 @@
 from gradeflow_engine.adapters.rubric import RubricAdapterConfig
 from gradeflow_engine.question_sets.model import QuestionSet
-from gradeflow_engine.rubrics.model import Rubric, RubricCoverage
-from gradeflow_engine.rules.models import QuestionRule
+from gradeflow_engine.rubrics.model import (
+    Rubric,
+    RubricCoverage,
+    StaleRuleReference,
+)
+from gradeflow_engine.rules.models import (
+    MultiTargetQuestionRule,
+    QuestionRule,
+    SingleTargetQuestionRule,
+)
 from gradeflow_engine.rules.types import RuleValidationError
 from gradeflow_engine.serializations.rubric import RubricSerializerConfig
 from pydantic import BaseModel, Field
@@ -63,12 +71,9 @@ class ValidateRubricResponse(BaseModel):
     errors: list[RuleValidationError]
 
 
-class CoverageRequest(BaseModel):
-    use_stored_rubric: bool = True
-    use_stored_question_set: bool = True
-    rubric: Rubric | None = None
-    question_set: QuestionSet | None = None
-
-
-class CoverageResponse(BaseModel):
+class RubricOverviewResponse(BaseModel):
+    question_rules: list[SingleTargetQuestionRule]
+    global_rules: list[MultiTargetQuestionRule]
     coverage: RubricCoverage
+    stale_rules: list[StaleRuleReference]
+    status: SectionStatus

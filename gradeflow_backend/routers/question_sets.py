@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, status
+from gradeflow_engine.questions.models import Question
 
 from gradeflow_backend.dependencies.memberships import member_guard_factory, role_guard_factory
 from gradeflow_backend.dependencies.services import get_question_set_service
@@ -10,7 +11,9 @@ from gradeflow_backend.schemas.question_sets import (
     LoadQuestionSetRequest,
     ParseSubmissionsRequest,
     ParseSubmissionsResponse,
+    QuestionCreateRequest,
     QuestionSetResponse,
+    QuestionUpdateRequest,
     SetQuestionSetByModelRequest,
 )
 from gradeflow_backend.services.question_sets import QuestionSetService
@@ -94,3 +97,46 @@ def delete_question_set(
     _u: str = Depends(role_guard_factory("editor")),
 ) -> None:
     svc.delete(assessment_id)
+
+
+@router.post("/questions", response_model=QuestionSetResponse, status_code=status.HTTP_201_CREATED)
+def create_question(
+    assessment_id: str,
+    req: QuestionCreateRequest,
+    svc: QuestionSetService = Depends(get_question_set_service),
+    _u: str = Depends(role_guard_factory("editor")),
+) -> QuestionSetResponse:
+    return svc.create_question(assessment_id, req)
+
+
+@router.get("/questions/{question_id}", response_model=Question)
+def get_question(
+    assessment_id: str,
+    question_id: str,
+    svc: QuestionSetService = Depends(get_question_set_service),
+    _u: str = Depends(member_guard_factory()),
+) -> Question:
+    return svc.get_question(assessment_id, question_id)
+
+
+@router.put(
+    "/questions/{question_id}", response_model=QuestionSetResponse, status_code=status.HTTP_200_OK
+)
+def update_question(
+    assessment_id: str,
+    question_id: str,
+    req: QuestionUpdateRequest,
+    svc: QuestionSetService = Depends(get_question_set_service),
+    _u: str = Depends(role_guard_factory("editor")),
+) -> QuestionSetResponse:
+    return svc.update_question(assessment_id, question_id, req)
+
+
+@router.delete("/questions/{question_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_question(
+    assessment_id: str,
+    question_id: str,
+    svc: QuestionSetService = Depends(get_question_set_service),
+    _u: str = Depends(role_guard_factory("editor")),
+) -> None:
+    svc.delete_question(assessment_id, question_id)

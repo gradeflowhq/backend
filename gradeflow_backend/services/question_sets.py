@@ -8,6 +8,8 @@ from gradeflow_engine.core import (
 from gradeflow_engine.exceptions import GradeFlowError
 from gradeflow_engine.io.sources import DataSource
 from gradeflow_engine.question_sets.model import QuestionSet
+from gradeflow_engine.questions.models import Question
+from gradeflow_engine.questions.types import QuestionId
 from gradeflow_engine.serializations.base import DataBlob
 
 from gradeflow_backend.models.assessment import Assessment
@@ -19,10 +21,12 @@ from gradeflow_backend.schemas.question_sets import (
     LoadQuestionSetRequest,
     ParseSubmissionsRequest,
     ParseSubmissionsResponse,
+    QuestionCreateRequest,
     QuestionSetResponse,
+    QuestionUpdateRequest,
     SetQuestionSetByModelRequest,
 )
-from gradeflow_backend.services.exceptions import BadRequestError
+from gradeflow_backend.services.exceptions import BadRequestError, NotFoundError
 from gradeflow_backend.services.submissions import derive_raw_submissions
 from gradeflow_backend.services.yaml_artifacts import YamlArtifactService
 from gradeflow_backend.utils.filenames import make_safe_export_basename
@@ -61,6 +65,53 @@ class QuestionSetService(
 
     def delete(self, assessment_id: str) -> None:
         self._delete_artifact(assessment_id)
+
+    def get_question(self, assessment_id: str, question_id: QuestionId) -> Question:
+        question_set = self._load_stored(self._get_or_404(assessment_id))
+        return self._question_or_404(question_set, question_id)
+
+    def create_question(
+        self,
+        assessment_id: str,
+        req: QuestionCreateRequest,
+    ) -> QuestionSetResponse:
+        assessment = self._get_or_404(assessment_id)
+        question_set = self._load_stored_or_empty(assessment)
+        if req.question_id in question_set.question_map:
+            raise BadRequestError(f"Question {req.question_id} already exists")
+        return self._store_and_respond(
+            assessment_id,
+            QuestionSet(
+                question_map={
+                    **question_set.question_map,
+                    req.question_id: req.question,
+                }
+            ),
+        )
+
+    def update_question(
+        self,
+        assessment_id: str,
+        question_id: QuestionId,
+        req: QuestionUpdateRequest,
+    ) -> QuestionSetResponse:
+        assessment = self._get_or_404(assessment_id)
+        question_set = self._load_stored(assessment)
+        self._question_or_404(question_set, question_id)
+        question_map = dict(question_set.question_map)
+        question_map[question_id] = req.question
+        return self._store_and_respond(assessment_id, QuestionSet(question_map=question_map))
+
+    def delete_question(self, assessment_id: str, question_id: QuestionId) -> None:
+        assessment = self._get_or_404(assessment_id)
+        question_set = self._load_stored(assessment)
+        self._question_or_404(question_set, question_id)
+        question_map = {
+            qid: question
+            for qid, question in question_set.question_map.items()
+            if qid != question_id
+        }
+        self._store_question_set_yaml(assessment_id, QuestionSet(question_map=question_map))
 
     def infer(self, assessment_id: str, req: InferQuestionSetRequest) -> QuestionSetResponse:
         a = self._get_or_404(assessment_id)
@@ -132,6 +183,17 @@ class QuestionSetService(
     def _load_stored(self, assessment: Assessment) -> QuestionSet:
         return load_question_set(assessment)
 
+    def _load_stored_or_empty(self, assessment: Assessment) -> QuestionSet:
+        if not assessment.question_set_yaml:
+            return QuestionSet(question_map={})
+        return self._load_stored(assessment)
+
+    def _question_or_404(self, question_set: QuestionSet, question_id: QuestionId) -> Question:
+        question = question_set.question_map.get(question_id)
+        if question is None:
+            raise NotFoundError(f"Question {question_id} not found")
+        return question
+
     def _dump_to_blob(
         self,
         artifact: QuestionSet,
@@ -147,6 +209,10 @@ class QuestionSetService(
 
     def _store_yaml(self, assessment_id: str, yaml_str: str | None) -> None:
         self.repo.set_question_set_yaml(assessment_id, yaml_str)
+
+    def _store_question_set_yaml(self, assessment_id: str, question_set: QuestionSet) -> None:
+        blob = self._dump_to_blob(question_set, serializer_name="yaml")
+        self._store_yaml(assessment_id, blob.data.decode("utf-8"))
 
     def _build_response(self, assessment: Assessment, artifact: QuestionSet) -> QuestionSetResponse:
         return QuestionSetResponse(

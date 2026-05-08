@@ -261,6 +261,42 @@ class ApiClient:
             headers=self._auth_header,
         )
 
+    def try_create_question(
+        self,
+        assessment_id: str,
+        question_id: str,
+        question: dict[str, object],
+    ) -> Response:
+        return self.client.post(
+            f"/assessments/{assessment_id}/question-set/questions",
+            json={"question_id": question_id, "question": question},
+            headers=self._auth_header,
+        )
+
+    def try_get_question(self, assessment_id: str, question_id: str) -> Response:
+        return self.client.get(
+            f"/assessments/{assessment_id}/question-set/questions/{question_id}",
+            headers=self._auth_header,
+        )
+
+    def try_update_question(
+        self,
+        assessment_id: str,
+        question_id: str,
+        question: dict[str, object],
+    ) -> Response:
+        return self.client.put(
+            f"/assessments/{assessment_id}/question-set/questions/{question_id}",
+            json={"question": question},
+            headers=self._auth_header,
+        )
+
+    def try_delete_question(self, assessment_id: str, question_id: str) -> Response:
+        return self.client.delete(
+            f"/assessments/{assessment_id}/question-set/questions/{question_id}",
+            headers=self._auth_header,
+        )
+
     # Question sets (success-path delegates to try-)
 
     def set_question_set_yaml(self, assessment_id: str, yaml_str: str) -> QuestionSetResponse:
@@ -293,6 +329,38 @@ class ApiClient:
         r = self.try_export_question_set(assessment_id=assessment_id)
         assert r.status_code == 200, r.text
         return ExportQuestionSetResponse.model_validate(r.json())
+
+    def create_question(
+        self,
+        assessment_id: str,
+        question_id: str,
+        question: dict[str, object],
+    ) -> QuestionSetResponse:
+        r = self.try_create_question(
+            assessment_id=assessment_id,
+            question_id=question_id,
+            question=question,
+        )
+        assert r.status_code == 201, r.text
+        return QuestionSetResponse.model_validate(r.json())
+
+    def update_question(
+        self,
+        assessment_id: str,
+        question_id: str,
+        question: dict[str, object],
+    ) -> QuestionSetResponse:
+        r = self.try_update_question(
+            assessment_id=assessment_id,
+            question_id=question_id,
+            question=question,
+        )
+        assert r.status_code == 200, r.text
+        return QuestionSetResponse.model_validate(r.json())
+
+    def delete_question(self, assessment_id: str, question_id: str) -> None:
+        r = self.try_delete_question(assessment_id=assessment_id, question_id=question_id)
+        assert r.status_code == 204, r.text
 
     # -----------------
     # Rubrics (try-variants)

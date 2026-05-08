@@ -5,11 +5,22 @@ from gradeflow_engine.question_sets.inference import (
     DEFAULT_MULTI_VALUE_DELIMITER,
 )
 from gradeflow_engine.question_sets.model import QuestionSet
+from gradeflow_engine.questions.models import Question
+from gradeflow_engine.questions.types import QuestionId
 from gradeflow_engine.serializations.question_set import QuestionSetSerializerConfig
 from gradeflow_engine.submissions.models import RawSubmission, Submission
 from pydantic import BaseModel, Field
 
 from gradeflow_backend.schemas.status import SectionStatus
+
+
+class QuestionCreateRequest(BaseModel):
+    question_id: QuestionId
+    question: Question
+
+
+class QuestionUpdateRequest(BaseModel):
+    question: Question
 
 
 class SetQuestionSetByModelRequest(BaseModel):

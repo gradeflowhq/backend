@@ -4,6 +4,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from gradeflow_engine.rubrics.model import RubricGradingParallelMode
+
 from gradeflow_backend.config import get_settings
 from gradeflow_backend.executors.base import GradingJobExecutor
 from gradeflow_backend.executors.env import build_gradeflow_env
@@ -32,6 +34,8 @@ class InMemorySubprocessJobExecutor(InMemoryBaseJobExecutor):
         remove_adjustments: bool = False,
         override_results: bool = True,
         grade_questions_without_rule: bool = True,
+        rubric_grading_parallel_jobs: int = 1,
+        rubric_grading_parallel_mode: RubricGradingParallelMode = "processes",
     ) -> None:
         """
         Invoke the shared entrypoint in a local Python subprocess, passing GRADEFLOW_* env vars.
@@ -59,6 +63,8 @@ class InMemorySubprocessJobExecutor(InMemoryBaseJobExecutor):
                 remove_adjustments=remove_adjustments,
                 override_results=override_results,
                 grade_questions_without_rule=grade_questions_without_rule,
+                rubric_grading_parallel_jobs=rubric_grading_parallel_jobs,
+                rubric_grading_parallel_mode=rubric_grading_parallel_mode,
             ),
         }
 

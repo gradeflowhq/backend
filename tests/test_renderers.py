@@ -48,6 +48,7 @@ rules:
         raw_submissions=raw_submissions,
         question_set=qset,
         rubric=rubric,
+        rubric_grading_parallel_mode="processes",
     )
 
 

@@ -1,7 +1,10 @@
+import json
+import subprocess
 from pathlib import Path
 
 import pytest
 
+from gradeflow_backend.executors import entrypoint
 from gradeflow_backend.executors.entrypoint import Config
 from gradeflow_backend.executors.env import (
     ASSESSMENT_ID_ENV,
@@ -17,6 +20,8 @@ from gradeflow_backend.executors.env import (
     POINT_COLUMNS_JSON_ENV,
     QSET_PATH_ENV,
     REMOVE_ADJUSTMENTS_ENV,
+    RUBRIC_GRADING_PARALLEL_JOBS_ENV,
+    RUBRIC_GRADING_PARALLEL_MODE_ENV,
     RUBRIC_PATH_ENV,
     SUBMISSIONS_PATH_ENV,
     TIMEOUT_S_ENV,
@@ -37,13 +42,15 @@ def test_build_gradeflow_env_stringifies_contract_values() -> None:
         submissions_path=Path("/tmp/work/submissions.csv"),
         qset_path=Path("/tmp/work/question_set.yaml"),
         rubric_path=Path("/tmp/work/rubric.yaml"),
-        out_path=Path("/tmp/work/graded.yaml"),
+        out_path=Path("/tmp/work/graded.json"),
         timeout_s=12,
         callback_timeout_s=34,
         point_columns_json='{"Q1":"points"}',
         remove_adjustments=True,
         override_results=False,
         grade_questions_without_rule=False,
+        rubric_grading_parallel_jobs=4,
+        rubric_grading_parallel_mode="threads",
     )
 
     assert env == {
@@ -57,13 +64,15 @@ def test_build_gradeflow_env_stringifies_contract_values() -> None:
         SUBMISSIONS_PATH_ENV: "/tmp/work/submissions.csv",
         QSET_PATH_ENV: "/tmp/work/question_set.yaml",
         RUBRIC_PATH_ENV: "/tmp/work/rubric.yaml",
-        OUT_PATH_ENV: "/tmp/work/graded.yaml",
+        OUT_PATH_ENV: "/tmp/work/graded.json",
         TIMEOUT_S_ENV: "12",
         CALLBACK_TIMEOUT_S_ENV: "34",
         POINT_COLUMNS_JSON_ENV: '{"Q1":"points"}',
         REMOVE_ADJUSTMENTS_ENV: "true",
         OVERRIDE_RESULTS_ENV: "false",
         GRADE_QUESTIONS_WITHOUT_RULE_ENV: "false",
+        RUBRIC_GRADING_PARALLEL_JOBS_ENV: "4",
+        RUBRIC_GRADING_PARALLEL_MODE_ENV: "threads",
     }
 
 
@@ -81,13 +90,15 @@ def test_entrypoint_config_reads_explicit_gradeflow_aliases(
         submissions_path="/workspace/submissions.csv",
         qset_path="/workspace/question_set.yaml",
         rubric_path="/workspace/rubric.yaml",
-        out_path="/workspace/graded.yaml",
+        out_path="/workspace/graded.json",
         timeout_s=300,
         callback_timeout_s=10,
         point_columns_json='{"Q2":"Adjusted"}',
         remove_adjustments=False,
         override_results=True,
         grade_questions_without_rule=True,
+        rubric_grading_parallel_jobs=2,
+        rubric_grading_parallel_mode="processes",
     )
 
     for key, value in env.items():
@@ -106,7 +117,107 @@ def test_entrypoint_config_reads_explicit_gradeflow_aliases(
     assert cfg.remove_adjustments is False
     assert cfg.override_results is True
     assert cfg.grade_questions_without_rule is True
+    assert cfg.rubric_grading_parallel_jobs == 2
+    assert cfg.rubric_grading_parallel_mode == "processes"
     assert cfg.resolved_submissions() == Path("/workspace/submissions.csv")
     assert cfg.resolved_qset() == Path("/workspace/question_set.yaml")
     assert cfg.resolved_rubric() == Path("/workspace/rubric.yaml")
-    assert cfg.resolved_out() == Path("/workspace/graded.yaml")
+    assert cfg.resolved_out() == Path("/workspace/graded.json")
+
+
+def test_entrypoint_run_engine_cli_forwards_rubric_grading_options(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    captured_cmd: list[str] = []
+
+    def fake_run(
+        cmd: list[str],
+        **_: object,
+    ) -> subprocess.CompletedProcess[str]:
+        captured_cmd.extend(cmd)
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    monkeypatch.setattr(entrypoint.subprocess, "run", fake_run)
+
+    entrypoint._run_engine_cli(
+        engine_bin="gradeflow-engine",
+        submissions_csv=tmp_path / "submissions.csv",
+        qset_yaml=tmp_path / "question_set.yaml",
+        rubric_yaml=tmp_path / "rubric.yaml",
+        out_json=tmp_path / "graded.json",
+        timeout_s=30,
+        rubric_grading_parallel_jobs=3,
+        rubric_grading_parallel_mode="threads",
+    )
+
+    assert "--rubric-grading-parallel-jobs" in captured_cmd
+    assert captured_cmd[captured_cmd.index("--rubric-grading-parallel-jobs") + 1] == "3"
+    assert "--out-serializer" in captured_cmd
+    assert captured_cmd[captured_cmd.index("--out-serializer") + 1] == "json"
+    assert "--rubric-grading-parallel-mode" in captured_cmd
+    assert captured_cmd[captured_cmd.index("--rubric-grading-parallel-mode") + 1] == "threads"
+
+
+def test_entrypoint_main_reads_json_output_and_posts_callback(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    out_json = tmp_path / "graded.json"
+    env = build_gradeflow_env(
+        assessment_id="a3",
+        job_id="job-a3-run",
+        job_type="run",
+        callback_url="https://example.test/callback",
+        callback_secret="secret-3",
+        engine_bin="gradeflow-engine",
+        workdir=tmp_path,
+        submissions_path=tmp_path / "submissions.csv",
+        qset_path=tmp_path / "question_set.yaml",
+        rubric_path=tmp_path / "rubric.yaml",
+        out_path=out_json,
+        timeout_s=300,
+        callback_timeout_s=10,
+        rubric_grading_parallel_jobs=2,
+        rubric_grading_parallel_mode="threads",
+    )
+    for key, value in env.items():
+        monkeypatch.setenv(key, value)
+
+    def fake_run_engine_cli(
+        *,
+        out_json: Path,
+        **_: object,
+    ) -> None:
+        out_json.write_text(
+            json.dumps([{"student_id": "s1", "answer_map": {"q1": "yes"}, "result_map": {}}]),
+            encoding="utf-8",
+        )
+
+    class Response:
+        status_code = 204
+        text = ""
+
+    captured: dict[str, object] = {}
+
+    def fake_post(
+        url: str,
+        *,
+        content: bytes,
+        timeout: int,
+        headers: dict[str, str],
+    ) -> Response:
+        captured.update({"url": url, "content": content, "timeout": timeout, "headers": headers})
+        return Response()
+
+    monkeypatch.setattr(entrypoint, "_run_engine_cli", fake_run_engine_cli)
+    monkeypatch.setattr(entrypoint.httpx, "post", fake_post)
+
+    assert entrypoint.main() == 0
+
+    content = captured["content"]
+    assert isinstance(content, bytes)
+    body = json.loads(content.decode("utf-8"))
+    assert captured["url"] == "https://example.test/callback"
+    assert body["job_id"] == "job-a3-run"
+    assert body["submissions"][0]["student_id"] == "s1"

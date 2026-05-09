@@ -1,6 +1,8 @@
 from os import PathLike, fspath
 from typing import Final
 
+from gradeflow_engine.rubrics.model import RubricGradingParallelMode
+
 GRADEFLOW_ENV_PREFIX: Final = "GRADEFLOW_"
 
 ASSESSMENT_ID_ENV: Final = f"{GRADEFLOW_ENV_PREFIX}ASSESSMENT_ID"
@@ -20,6 +22,8 @@ POINT_COLUMNS_JSON_ENV: Final = f"{GRADEFLOW_ENV_PREFIX}POINT_COLUMNS_JSON"
 REMOVE_ADJUSTMENTS_ENV: Final = f"{GRADEFLOW_ENV_PREFIX}REMOVE_ADJUSTMENTS"
 OVERRIDE_RESULTS_ENV: Final = f"{GRADEFLOW_ENV_PREFIX}OVERRIDE_RESULTS"
 GRADE_QUESTIONS_WITHOUT_RULE_ENV: Final = f"{GRADEFLOW_ENV_PREFIX}GRADE_QUESTIONS_WITHOUT_RULE"
+RUBRIC_GRADING_PARALLEL_JOBS_ENV: Final = f"{GRADEFLOW_ENV_PREFIX}RUBRIC_GRADING_PARALLEL_JOBS"
+RUBRIC_GRADING_PARALLEL_MODE_ENV: Final = f"{GRADEFLOW_ENV_PREFIX}RUBRIC_GRADING_PARALLEL_MODE"
 
 
 def build_gradeflow_env(
@@ -41,8 +45,10 @@ def build_gradeflow_env(
     remove_adjustments: bool = False,
     override_results: bool = True,
     grade_questions_without_rule: bool = True,
+    rubric_grading_parallel_jobs: int = 1,
+    rubric_grading_parallel_mode: RubricGradingParallelMode = "processes",
 ) -> dict[str, str]:
-    return {
+    env = {
         ASSESSMENT_ID_ENV: assessment_id,
         JOB_ID_ENV: job_id,
         JOB_TYPE_ENV: job_type,
@@ -60,4 +66,7 @@ def build_gradeflow_env(
         REMOVE_ADJUSTMENTS_ENV: str(remove_adjustments).lower(),
         OVERRIDE_RESULTS_ENV: str(override_results).lower(),
         GRADE_QUESTIONS_WITHOUT_RULE_ENV: str(grade_questions_without_rule).lower(),
+        RUBRIC_GRADING_PARALLEL_JOBS_ENV: str(rubric_grading_parallel_jobs),
+        RUBRIC_GRADING_PARALLEL_MODE_ENV: rubric_grading_parallel_mode,
     }
+    return env

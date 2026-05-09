@@ -80,13 +80,15 @@ def _build_nomad_job(
         submissions_path=f"{workdir}/submissions.csv",
         qset_path=f"{workdir}/question_set.yaml",
         rubric_path=f"{workdir}/rubric.yaml",
-        out_path=f"{workdir}/graded.yaml",
+        out_path=f"{workdir}/graded.json",
         timeout_s=s.timeout_s,
         callback_timeout_s=s.callback_timeout_s,
         point_columns_json=point_columns_json,
         remove_adjustments=spec.remove_adjustments,
         override_results=spec.override_results,
         grade_questions_without_rule=spec.grade_questions_without_rule,
+        rubric_grading_parallel_jobs=spec.rubric_grading_parallel_jobs,
+        rubric_grading_parallel_mode=spec.rubric_grading_parallel_mode,
     )
 
     templates: list[dict[str, str]] = [

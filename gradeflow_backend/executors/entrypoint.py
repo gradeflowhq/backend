@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 import httpx
-import yaml
+from gradeflow_engine.rubrics.model import RubricGradingParallelMode
 from gradeflow_engine.submissions.models import Submission
 from pydantic import BaseModel, Field, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -35,6 +35,8 @@ POINT_COLUMNS_JSON_ENV = f"{_PREFIX}POINT_COLUMNS_JSON"
 REMOVE_ADJUSTMENTS_ENV = f"{_PREFIX}REMOVE_ADJUSTMENTS"
 OVERRIDE_RESULTS_ENV = f"{_PREFIX}OVERRIDE_RESULTS"
 GRADE_QUESTIONS_WITHOUT_RULE_ENV = f"{_PREFIX}GRADE_QUESTIONS_WITHOUT_RULE"
+RUBRIC_GRADING_PARALLEL_JOBS_ENV = f"{_PREFIX}RUBRIC_GRADING_PARALLEL_JOBS"
+RUBRIC_GRADING_PARALLEL_MODE_ENV = f"{_PREFIX}RUBRIC_GRADING_PARALLEL_MODE"
 
 CALLBACK_SIGNATURE_HEADER = "X-GradeFlow-Signature"
 
@@ -83,6 +85,12 @@ class Config(BaseSettings):
     grade_questions_without_rule: bool = Field(
         default=True, validation_alias=GRADE_QUESTIONS_WITHOUT_RULE_ENV
     )
+    rubric_grading_parallel_jobs: int = Field(
+        default=1, validation_alias=RUBRIC_GRADING_PARALLEL_JOBS_ENV
+    )
+    rubric_grading_parallel_mode: RubricGradingParallelMode = Field(
+        default="processes", validation_alias=RUBRIC_GRADING_PARALLEL_MODE_ENV
+    )
 
     def resolved_submissions(self) -> Path:
         return self.submissions_path or (self.workdir / "submissions.csv")
@@ -94,7 +102,7 @@ class Config(BaseSettings):
         return self.rubric_path or (self.workdir / "rubric.yaml")
 
     def resolved_out(self) -> Path:
-        return self.out_path or (self.workdir / "graded.yaml")
+        return self.out_path or (self.workdir / "graded.json")
 
 
 class Payload(BaseModel):
@@ -110,11 +118,13 @@ def _run_engine_cli(
     submissions_csv: Path,
     qset_yaml: Path,
     rubric_yaml: Path,
-    out_yaml: Path,
+    out_json: Path,
     timeout_s: int,
     point_columns: dict[str, str] | None = None,
     override_results: bool = True,
     grade_questions_without_rule: bool = True,
+    rubric_grading_parallel_jobs: int = 1,
+    rubric_grading_parallel_mode: RubricGradingParallelMode = "processes",
 ) -> None:
     cmd = [
         engine_bin,
@@ -132,9 +142,9 @@ def _run_engine_cli(
         "--rubric-serializer",
         "yaml",
         "--out-serializer",
-        "yaml",
+        "json",
         "--out",
-        str(out_yaml),
+        str(out_json),
         "--rubric-override-results" if override_results else "--no-rubric-override-results",
         "--rubric-grade-questions-without-rule"
         if grade_questions_without_rule
@@ -142,6 +152,9 @@ def _run_engine_cli(
     ]
     for qid, col in (point_columns or {}).items():
         cmd += ["--point-column", f"{qid}={col}"]
+    if rubric_grading_parallel_jobs != 1:
+        cmd += ["--rubric-grading-parallel-jobs", str(rubric_grading_parallel_jobs)]
+    cmd += ["--rubric-grading-parallel-mode", rubric_grading_parallel_mode]
     completed = subprocess.run(
         cmd,
         capture_output=True,
@@ -171,22 +184,24 @@ def main() -> int:
     submissions_csv = cfg.resolved_submissions()
     qset_yaml = cfg.resolved_qset()
     rubric_yaml = cfg.resolved_rubric()
-    out_yaml = cfg.resolved_out()
+    out_json = cfg.resolved_out()
 
     _run_engine_cli(
         engine_bin=cfg.engine_bin,
         submissions_csv=submissions_csv,
         qset_yaml=qset_yaml,
         rubric_yaml=rubric_yaml,
-        out_yaml=out_yaml,
+        out_json=out_json,
         timeout_s=cfg.timeout_s,
         point_columns=json.loads(cfg.point_columns_json),
         override_results=cfg.override_results,
         grade_questions_without_rule=cfg.grade_questions_without_rule,
+        rubric_grading_parallel_jobs=cfg.rubric_grading_parallel_jobs,
+        rubric_grading_parallel_mode=cfg.rubric_grading_parallel_mode,
     )
 
     try:
-        raw_items = yaml.safe_load(out_yaml.read_text(encoding="utf-8"))
+        raw_items = json.loads(out_json.read_text(encoding="utf-8"))
         if raw_items is None:
             raw_items = []
         if not isinstance(raw_items, list):

@@ -3,7 +3,7 @@ from typing import Annotated, Literal
 
 from gradeflow_engine.question_sets.model import QuestionSet
 from gradeflow_engine.questions.types import QuestionId
-from gradeflow_engine.rubrics.model import Rubric
+from gradeflow_engine.rubrics.model import Rubric, RubricGradingParallelMode
 from gradeflow_engine.rules.models import QuestionRule
 from gradeflow_engine.rules.result import QuestionResult
 from gradeflow_engine.serializations.submissions import SubmissionsSerializerConfig
@@ -121,6 +121,8 @@ class GradingJobSpec(BaseModel):
     )
     override_results: bool = Field(default=True)
     grade_questions_without_rule: bool = Field(default=True)
+    rubric_grading_parallel_jobs: int = Field(default=1)
+    rubric_grading_parallel_mode: RubricGradingParallelMode = Field(default="processes")
 
 
 class GradingJobResult(BaseModel):

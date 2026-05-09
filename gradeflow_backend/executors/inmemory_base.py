@@ -7,6 +7,8 @@ from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
 
+from gradeflow_engine.rubrics.model import RubricGradingParallelMode
+
 from gradeflow_backend.executors.base import GradingJobExecutor, format_job_error
 from gradeflow_backend.executors.exceptions import JobNotFoundError
 from gradeflow_backend.schemas.grading import GradingJobSpec, JobStatus
@@ -184,13 +186,13 @@ class InMemoryBaseJobExecutor(GradingJobExecutor):
     ) -> tuple[Path, Path, Path, Path, Path]:
         """
         Writes submissions.csv, question_set.yaml, rubric.yaml, entrypoint.py, and out path.
-        Returns paths: (submissions_csv, qset_yaml, rubric_yaml, entrypoint_py, out_yaml)
+        Returns paths: (submissions_csv, qset_yaml, rubric_yaml, entrypoint_py, out_json)
         """
         submissions_csv = workdir / "submissions.csv"
         qset_yaml = workdir / "question_set.yaml"
         rubric_yaml = workdir / "rubric.yaml"
         entrypoint_py = workdir / "entrypoint.py"
-        out_yaml = workdir / "graded.yaml"
+        out_json = workdir / "graded.json"
 
         submissions_csv.write_text(render_submissions_csv(spec), encoding="utf-8", newline="")
         qset_yaml.write_text(render_question_set_yaml(spec), encoding="utf-8")
@@ -198,7 +200,7 @@ class InMemoryBaseJobExecutor(GradingJobExecutor):
         entrypoint_py.write_text(_load_entrypoint_source(), encoding="utf-8")
         entrypoint_py.chmod(0o755)
 
-        return submissions_csv, qset_yaml, rubric_yaml, entrypoint_py, out_yaml
+        return submissions_csv, qset_yaml, rubric_yaml, entrypoint_py, out_json
 
     def _process_job(self, job: _Job) -> None:
         with self._lock:
@@ -225,7 +227,7 @@ class InMemoryBaseJobExecutor(GradingJobExecutor):
             workdir = Path(td)
 
             # Stage inputs and entrypoint
-            submissions_csv, qset_yaml, rubric_yaml, entrypoint_py, out_yaml = self._stage_inputs(
+            submissions_csv, qset_yaml, rubric_yaml, entrypoint_py, out_json = self._stage_inputs(
                 workdir=workdir, spec=spec
             )
 
@@ -236,7 +238,7 @@ class InMemoryBaseJobExecutor(GradingJobExecutor):
                 qset_yaml=qset_yaml,
                 rubric_yaml=rubric_yaml,
                 entrypoint_py=entrypoint_py,
-                out_path=out_yaml,
+                out_path=out_json,
                 callback_url=job.callback_url,
                 callback_secret=job.callback_secret,
                 assessment_id=spec.assessment_id,
@@ -246,6 +248,8 @@ class InMemoryBaseJobExecutor(GradingJobExecutor):
                 remove_adjustments=spec.remove_adjustments,
                 override_results=spec.override_results,
                 grade_questions_without_rule=spec.grade_questions_without_rule,
+                rubric_grading_parallel_jobs=spec.rubric_grading_parallel_jobs,
+                rubric_grading_parallel_mode=spec.rubric_grading_parallel_mode,
             )
 
     # ------- Abstract hook to implement in subclasses -------
@@ -268,6 +272,8 @@ class InMemoryBaseJobExecutor(GradingJobExecutor):
         remove_adjustments: bool = False,
         override_results: bool = True,
         grade_questions_without_rule: bool = True,
+        rubric_grading_parallel_jobs: int = 1,
+        rubric_grading_parallel_mode: RubricGradingParallelMode = "processes",
     ) -> None:
         """
         Subclasses must implement this to run the shared entrypoint and produce out_path.

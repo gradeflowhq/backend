@@ -2,6 +2,8 @@ import logging
 import subprocess
 from pathlib import Path
 
+from gradeflow_engine.rubrics.model import RubricGradingParallelMode
+
 from gradeflow_backend.config import get_settings
 from gradeflow_backend.executors.base import GradingJobExecutor
 from gradeflow_backend.executors.env import build_gradeflow_env
@@ -80,6 +82,8 @@ class InMemoryContainerJobExecutor(InMemoryBaseJobExecutor):
         remove_adjustments: bool = False,
         override_results: bool = True,
         grade_questions_without_rule: bool = True,
+        rubric_grading_parallel_jobs: int = 1,
+        rubric_grading_parallel_mode: RubricGradingParallelMode = "processes",
     ) -> None:
         """
         Invoke the shared entrypoint inside a container, injecting GRADEFLOW_* env vars.
@@ -105,13 +109,15 @@ class InMemoryContainerJobExecutor(InMemoryBaseJobExecutor):
             submissions_path=f"{self._container_workdir}/submissions.csv",
             qset_path=f"{self._container_workdir}/question_set.yaml",
             rubric_path=f"{self._container_workdir}/rubric.yaml",
-            out_path=f"{self._container_workdir}/graded.yaml",
+            out_path=f"{self._container_workdir}/graded.json",
             timeout_s=self._timeout_s,
             callback_timeout_s=self._callback_timeout_s,
             point_columns_json=point_columns_json,
             remove_adjustments=remove_adjustments,
             override_results=override_results,
             grade_questions_without_rule=grade_questions_without_rule,
+            rubric_grading_parallel_jobs=rubric_grading_parallel_jobs,
+            rubric_grading_parallel_mode=rubric_grading_parallel_mode,
         )
         env_flags = [
             flag for key, value in gradeflow_env.items() for flag in ("-e", f"{key}={value}")

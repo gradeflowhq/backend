@@ -2,6 +2,7 @@ from typing import Any, cast
 
 import pytest
 
+from gradeflow_backend.config import get_settings
 from gradeflow_backend.dependencies.executor import get_executor
 from gradeflow_backend.executors.base import GradingJobExecutor
 from gradeflow_backend.executors.exceptions import JobNotFoundError
@@ -34,6 +35,33 @@ class _FailingExecutor(GradingJobExecutor):
         if job_id != self._job_id:
             raise JobNotFoundError(f"Job not found: {job_id}")
         return self._error_message
+
+    def start(self) -> None:
+        return
+
+    def stop(self) -> None:
+        return
+
+
+class _CapturingExecutor(GradingJobExecutor):
+    def __init__(self) -> None:
+        self.spec: GradingJobSpec | None = None
+        self._job_id = ""
+
+    def submit(
+        self,
+        job_id: str,
+        spec: GradingJobSpec,
+        callback_url: str,
+        callback_secret: str,
+    ) -> None:
+        self._job_id = job_id
+        self.spec = spec
+
+    def get_status(self, job_id: str) -> JobStatus:
+        if job_id != self._job_id:
+            raise JobNotFoundError(f"Job not found: {job_id}")
+        return "queued"
 
     def start(self) -> None:
         return
@@ -108,3 +136,27 @@ def test_job_submission_executor_failure_returns_structured_503(
         "or failed to accept the job."
     )
     assert body["errors"] == [body["message"]]
+
+
+def test_grading_job_spec_uses_parallel_grading_settings(
+    api: ApiClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = get_settings()
+    monkeypatch.setattr(settings.grading, "rubric_grading_parallel_jobs", 3)
+    monkeypatch.setattr(settings.grading, "rubric_grading_parallel_mode", "threads")
+    executor = _CapturingExecutor()
+    monkeypatch.setitem(
+        cast(dict[Any, Any], app.dependency_overrides), get_executor, lambda: executor
+    )
+
+    created = api.create_assessment("Parallel Grading Settings")
+    api.set_question_set_yaml(created.id, QUESTION_SET_YAML)
+    api.set_rubric_yaml(created.id, RUBRIC_YAML)
+    api.set_submissions_csv(created.id, SUBMISSIONS_CSV)
+
+    api.run_grading_start(created.id)
+
+    assert executor.spec is not None
+    assert executor.spec.rubric_grading_parallel_jobs == 3
+    assert executor.spec.rubric_grading_parallel_mode == "threads"

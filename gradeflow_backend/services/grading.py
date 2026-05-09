@@ -13,6 +13,7 @@ from gradeflow_engine.rules.models import QuestionRule
 from gradeflow_engine.rules.result import QuestionResult
 from gradeflow_engine.submissions.models import RawSubmission, Submission
 
+from gradeflow_backend.config import get_settings
 from gradeflow_backend.models.assessment import Assessment
 from gradeflow_backend.models.submission import SubmissionResult
 from gradeflow_backend.repositories.assessments import AssessmentRepository
@@ -124,6 +125,8 @@ class GradingService(BaseService):
                 seed=config.seed,
             )
 
+        grading_settings = get_settings().grading
+
         return jobs.submit(
             GradingJobSpec(
                 assessment_id=assessment_id,
@@ -134,6 +137,8 @@ class GradingService(BaseService):
                 remove_adjustments=remove_adjustments,
                 override_results=override_results,
                 grade_questions_without_rule=grade_questions_without_rule,
+                rubric_grading_parallel_jobs=grading_settings.rubric_grading_parallel_jobs,
+                rubric_grading_parallel_mode=grading_settings.rubric_grading_parallel_mode,
             ),
             request,
         )

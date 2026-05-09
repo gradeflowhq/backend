@@ -49,6 +49,8 @@ class SynchronousJobExecutor(GradingJobExecutor):
                 strict=False,
                 override_results=spec.override_results,
                 grade_questions_without_rule=spec.grade_questions_without_rule,
+                parallel_jobs=spec.rubric_grading_parallel_jobs,
+                parallel_mode=spec.rubric_grading_parallel_mode,
             )
 
             # Build result

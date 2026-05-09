@@ -1,6 +1,7 @@
 from functools import lru_cache
 from typing import Literal
 
+from gradeflow_engine.rubrics.model import RubricGradingParallelMode
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -116,6 +117,17 @@ class GradingSettings(BaseModel):
         default=10,
         ge=1,
         description="Number of recent completed grading jobs used to estimate job duration.",
+    )
+    rubric_grading_parallel_jobs: int = Field(
+        default=1,
+        description=(
+            "Number of workers to use for rubric grading. Use -1 for all CPUs available "
+            "to the process; capped by submission count. 0 is invalid."
+        ),
+    )
+    rubric_grading_parallel_mode: RubricGradingParallelMode = Field(
+        default="processes",
+        description="Worker mode for parallel rubric grading.",
     )
 
 

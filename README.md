@@ -70,7 +70,9 @@ Set `DATABASE__URL` to the SQLAlchemy connection string for your database:
 - `GRADING__MAX_SUBMISSION_PREVIEW` — maximum submissions allowed in a preview run (default: `20`)
 - `GRADING__RUN_REQUESTS_PER_MINUTE` — maximum grading-run requests allowed per client per minute (default: `10`)
 - `GRADING__PREVIEW_REQUESTS_PER_MINUTE` — maximum grading-preview requests allowed per client per minute (default: `30`)
-- `GRADING__COMPLETED_JOB_ESTIMATE_SAMPLE_SIZE` — recent completed jobs used for duration estimates (default: `50`)
+- `GRADING__COMPLETED_JOB_ESTIMATE_SAMPLE_SIZE` — recent completed jobs used for duration estimates (default: `10`)
+- `GRADING__RUBRIC_GRADING_PARALLEL_JOBS` — worker count for rubric grading; `-1` uses all CPUs available to the process, capped by submission count; `0` is invalid (default: `1`)
+- `GRADING__RUBRIC_GRADING_PARALLEL_MODE` — rubric grading worker mode: `processes` or `threads` (default: `processes`)
 
 Example `.env` can be found in `.env.example`.
 

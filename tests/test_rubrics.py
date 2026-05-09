@@ -66,14 +66,14 @@ def test_rule_crud(api: ApiClient) -> None:
     assert remaining[0].type == "TEXT_MATCH"
 
 
-def test_programmable_rule_accepts_parameter_values_without_dtype(api: ApiClient) -> None:
-    created = api.create_assessment("Programmable Parameters")
+def test_custom_code_rule_accepts_parameter_values_without_dtype(api: ApiClient) -> None:
+    created = api.create_assessment("Custom Code Parameters")
     api.set_question_set_yaml(created.id, QUESTION_SET_YAML)
 
     response = api.try_create_rule(
         created.id,
         {
-            "type": "PROGRAMMABLE",
+            "type": "CUSTOM_CODE",
             "question_id": "q1",
             "code": "passed = answer == target\noutput = 1.0 if passed else 0.0",
             "parameters": {
@@ -111,7 +111,7 @@ def test_rule_schema_lists_compatible_rules(api: ApiClient) -> None:
     assert [rule["type"] for rule in global_rules.json()["rules"]] == [
         "ASSUMPTION_SET_MULTI",
         "CONDITIONAL",
-        "PROGRAMMABLE_MULTI",
+        "CUSTOM_CODE_MULTI",
     ]
 
     slot_rules = api.try_list_compatible_rules(created.id, question_id="q4", path="rules.0")
@@ -219,32 +219,32 @@ def test_rule_schema_injects_question_specific_data(api: ApiClient) -> None:
     assert "prefixItems" not in rules_schema
     assert rules_schema["x-gradeflow"] == {"input": "rule-list"}
 
-    programmable_multi = api.try_get_rule_schema(created.id, rule_type="PROGRAMMABLE_MULTI")
-    assert programmable_multi.status_code == 200, programmable_multi.text
-    programmable_body = programmable_multi.json()
-    assert programmable_body["schema"]["title"] == "Programmable"
-    assert programmable_body["schema"]["properties"]["target_question_ids"]["items"]["enum"] == [
+    custom_code_multi = api.try_get_rule_schema(created.id, rule_type="CUSTOM_CODE_MULTI")
+    assert custom_code_multi.status_code == 200, custom_code_multi.text
+    custom_code_body = custom_code_multi.json()
+    assert custom_code_body["schema"]["title"] == "Custom Code"
+    assert custom_code_body["schema"]["properties"]["target_question_ids"]["items"]["enum"] == [
         "q1",
         "q2",
         "q3",
         "q4",
     ]
-    assert "examples" not in programmable_body["schema"]["properties"]["target_question_ids"]
-    assert programmable_body["schema"]["properties"]["target_question_ids"]["x-gradeflow"] == {
+    assert "examples" not in custom_code_body["schema"]["properties"]["target_question_ids"]
+    assert custom_code_body["schema"]["properties"]["target_question_ids"]["x-gradeflow"] == {
         "input": "string-list"
     }
-    assert "# - q2: int | float | None" in programmable_body["initial_value"]["code"]
-    assert programmable_body["schema"]["properties"]["code"]["x-gradeflow"] == {"input": "code"}
+    assert "# - q2: int | float | None" in custom_code_body["initial_value"]["code"]
+    assert custom_code_body["schema"]["properties"]["code"]["x-gradeflow"] == {"input": "code"}
 
-    programming = api.try_get_rule_schema(created.id, question_id="q1", rule_type="PROGRAMMING")
-    assert programming.status_code == 200, programming.text
-    programming_body = programming.json()
-    programming_defs = programming_body["schema"]["$defs"]
-    assert programming_defs["ProgrammingTestCase"]["title"] == "Test Case"
-    assert programming_defs["ProgrammingConfig"]["title"] == "Programming Configuration"
-    programming_config = programming_body["schema"]["$defs"]["ProgrammingConfig"]["properties"]
-    assert programming_config["prepend_code"]["x-gradeflow"] == {"input": "code"}
-    assert programming_config["append_code"]["x-gradeflow"] == {"input": "code"}
+    code_tests = api.try_get_rule_schema(created.id, question_id="q1", rule_type="CODE_TESTS")
+    assert code_tests.status_code == 200, code_tests.text
+    code_test_body = code_tests.json()
+    code_test_defs = code_test_body["schema"]["$defs"]
+    assert code_test_defs["CodeTestCase"]["title"] == "Test Case"
+    assert code_test_defs["CodeTestConfig"]["title"] == "Code Test Configuration"
+    code_test_config = code_test_body["schema"]["$defs"]["CodeTestConfig"]["properties"]
+    assert code_test_config["prepend_code"]["x-gradeflow"] == {"input": "code"}
+    assert code_test_config["append_code"]["x-gradeflow"] == {"input": "code"}
 
 
 def test_rule_schema_nested_contract(api: ApiClient) -> None:
@@ -433,7 +433,7 @@ rules:
     answers:
       - Alice
   - id: global-q23
-    type: PROGRAMMABLE_MULTI
+    type: CUSTOM_CODE_MULTI
     target_question_ids:
       - q2
       - q3
@@ -472,7 +472,7 @@ rules:
     answers:
       - x
   - id: stale-global
-    type: PROGRAMMABLE_MULTI
+    type: CUSTOM_CODE_MULTI
     target_question_ids:
       - q2
       - qz

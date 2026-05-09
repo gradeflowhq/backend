@@ -6,7 +6,7 @@ from typing import Any, cast
 import yaml
 
 MIGRATION_PATH = (
-    Path(__file__).parents[1]
+    Path(__file__).parents[2]
     / "migrations"
     / "versions"
     / "2d8f9c1a7b3e_assign_missing_rule_ids.py"

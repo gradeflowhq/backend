@@ -66,6 +66,235 @@ def test_rule_crud(api: ApiClient) -> None:
     assert remaining[0].type == "TEXT_MATCH"
 
 
+def test_programmable_rule_accepts_parameter_values_without_dtype(api: ApiClient) -> None:
+    created = api.create_assessment("Programmable Parameters")
+    api.set_question_set_yaml(created.id, QUESTION_SET_YAML)
+
+    response = api.try_create_rule(
+        created.id,
+        {
+            "type": "PROGRAMMABLE",
+            "question_id": "q1",
+            "code": "passed = answer == target\noutput = 1.0 if passed else 0.0",
+            "parameters": {
+                "target": {"value": "Alice"},
+                "attempts": {"value": 3},
+                "enabled": {"value": True},
+            },
+            "mode": "PASS_FAIL",
+        },
+    )
+
+    assert response.status_code == 201, response.text
+    parameters = response.json()["rubric"]["rules"][0]["parameters"]
+    assert parameters["target"] == {"dtype": "String", "value": "Alice"}
+    assert parameters["attempts"] == {"dtype": "Int", "value": 3}
+    assert parameters["enabled"] == {"dtype": "Boolean", "value": True}
+
+
+def test_rule_schema_lists_compatible_rules(api: ApiClient) -> None:
+    created = api.create_assessment("Rule Options")
+    api.set_question_set_yaml(created.id, QUESTION_SET_YAML)
+
+    choice_rules = api.try_list_compatible_rules(created.id, question_id="q3")
+    assert choice_rules.status_code == 200, choice_rules.text
+    choice_types = [rule["type"] for rule in choice_rules.json()["rules"]]
+    assert "MULTIPLE_CHOICE" in choice_types
+    assert "TEXT_MATCH" not in choice_types
+    assert choice_rules.json()["rules"][choice_types.index("MULTIPLE_CHOICE")] == {
+        "type": "MULTIPLE_CHOICE",
+        "label": "Multiple Choice",
+    }
+
+    global_rules = api.try_list_compatible_rules(created.id)
+    assert global_rules.status_code == 200, global_rules.text
+    assert [rule["type"] for rule in global_rules.json()["rules"]] == [
+        "ASSUMPTION_SET_MULTI",
+        "CONDITIONAL",
+        "PROGRAMMABLE_MULTI",
+    ]
+
+    slot_rules = api.try_list_compatible_rules(created.id, question_id="q4", path="rules.0")
+    assert slot_rules.status_code == 200, slot_rules.text
+    slot_types = [rule["type"] for rule in slot_rules.json()["rules"]]
+    assert "TEXT_MATCH" in slot_types
+    assert "NUMBER_EQUAL" not in slot_types
+
+
+def test_rule_schema_injects_question_specific_data(api: ApiClient) -> None:
+    created = api.create_assessment("Rule Schema")
+    api.set_question_set_yaml(created.id, QUESTION_SET_YAML)
+
+    mcq = api.try_get_rule_schema(
+        created.id,
+        question_id="q3",
+        rule_type="MULTIPLE_CHOICE",
+    )
+    assert mcq.status_code == 200, mcq.text
+    mcq_body = mcq.json()
+    answer_schema = mcq_body["schema"]["properties"]["answer"]
+    assert answer_schema["items"]["enum"] == ["A", "B", "C"]
+    assert mcq_body["initial_value"]["question_id"] == "q3"
+    assert mcq_body["initial_value"]["type"] == "MULTIPLE_CHOICE"
+    assert mcq_body["schema"]["properties"]["question_id"]["const"] == "q3"
+    assert mcq_body["schema"]["properties"]["question_id"]["default"] == "q3"
+    assert mcq_body["schema"]["properties"]["question_id"]["readOnly"] is True
+    assert mcq_body["schema"]["properties"]["type"]["const"] == "MULTIPLE_CHOICE"
+    assert mcq_body["schema"]["properties"]["type"]["default"] == "MULTIPLE_CHOICE"
+    assert "ui_schema" not in mcq_body
+
+    numeric_range = api.try_get_rule_schema(
+        created.id,
+        question_id="q2",
+        rule_type="NUMERIC_RANGE",
+    )
+    assert numeric_range.status_code == 200, numeric_range.text
+    numeric_body = numeric_range.json()
+    min_value_schema = numeric_body["schema"]["properties"]["min_value"]
+    assert "anyOf" not in min_value_schema
+    assert set(min_value_schema["type"]) == {"number", "null"}
+
+    api.set_submissions_csv(created.id, SUBMISSIONS_CSV)
+    text_match = api.try_get_rule_schema(
+        created.id,
+        question_id="q1",
+        rule_type="TEXT_MATCH",
+    )
+    assert text_match.status_code == 200, text_match.text
+    text_body = text_match.json()
+    assert text_body["schema"]["properties"]["answers"]["x-gradeflow"] == {
+        "input": "string-list",
+        "suggestions": ["Alice", "Bob"],
+    }
+    assert "examples" not in text_body["schema"]["properties"]["answers"]
+
+    number_equal = api.try_get_rule_schema(
+        created.id,
+        question_id="q2",
+        rule_type="NUMBER_EQUAL",
+    )
+    assert number_equal.status_code == 200, number_equal.text
+    number_equal_body = number_equal.json()
+    number_answers_schema = number_equal_body["schema"]["properties"]["answers"]
+    assert number_answers_schema["items"]["type"] == "string"
+    assert number_answers_schema["x-gradeflow"] == {
+        "input": "string-list",
+        "suggestions": ["90", "76"],
+    }
+    assert "examples" not in number_answers_schema
+
+    api.set_submissions_csv(
+        created.id,
+        "student_id,q1,q2,q3,q4\ns1,buy house,90,A,1|a\ns2,pay,76,B,2|b\ns3,house,77,C,3|c\n",
+    )
+    keywords = api.try_get_rule_schema(
+        created.id,
+        question_id="q1",
+        rule_type="KEYWORDS",
+    )
+    assert keywords.status_code == 200, keywords.text
+    keyword_suggestions = keywords.json()["schema"]["properties"]["keywords"]["x-gradeflow"][
+        "suggestions"
+    ]
+    assert set(keyword_suggestions) == {"buy", "pay", "house"}
+
+    assumption_set = api.try_get_rule_schema(created.id, rule_type="ASSUMPTION_SET_MULTI")
+    assert assumption_set.status_code == 200, assumption_set.text
+    assumption_body = assumption_set.json()
+    assert assumption_body["initial_value"]["assumptions"] == []
+    assert assumption_body["schema"]["$defs"]["MultiQuestionAssumption"]["title"] == "Assumption"
+
+    multi = api.try_get_rule_schema(
+        created.id,
+        question_id="q4",
+        rule_type="MULTI_VALUED",
+    )
+    assert multi.status_code == 200, multi.text
+    multi_body = multi.json()
+    rules_schema = multi_body["schema"]["properties"]["rules"]
+    assert multi_body["initial_value"]["rules"] == [{}, {}]
+    assert rules_schema["minItems"] == 2
+    assert rules_schema["maxItems"] == 2
+    assert "items" in rules_schema
+    assert "prefixItems" not in rules_schema
+    assert rules_schema["x-gradeflow"] == {"input": "rule-list"}
+
+    programmable_multi = api.try_get_rule_schema(created.id, rule_type="PROGRAMMABLE_MULTI")
+    assert programmable_multi.status_code == 200, programmable_multi.text
+    programmable_body = programmable_multi.json()
+    assert programmable_body["schema"]["title"] == "Programmable"
+    assert programmable_body["schema"]["properties"]["target_question_ids"]["items"]["enum"] == [
+        "q1",
+        "q2",
+        "q3",
+        "q4",
+    ]
+    assert "examples" not in programmable_body["schema"]["properties"]["target_question_ids"]
+    assert programmable_body["schema"]["properties"]["target_question_ids"]["x-gradeflow"] == {
+        "input": "string-list"
+    }
+    assert "# - q2: int | float | None" in programmable_body["initial_value"]["code"]
+    assert programmable_body["schema"]["properties"]["code"]["x-gradeflow"] == {"input": "code"}
+
+    programming = api.try_get_rule_schema(created.id, question_id="q1", rule_type="PROGRAMMING")
+    assert programming.status_code == 200, programming.text
+    programming_body = programming.json()
+    programming_defs = programming_body["schema"]["$defs"]
+    assert programming_defs["ProgrammingTestCase"]["title"] == "Test Case"
+    assert programming_defs["ProgrammingConfig"]["title"] == "Programming Configuration"
+    programming_config = programming_body["schema"]["$defs"]["ProgrammingConfig"]["properties"]
+    assert programming_config["prepend_code"]["x-gradeflow"] == {"input": "code"}
+    assert programming_config["append_code"]["x-gradeflow"] == {"input": "code"}
+
+
+def test_rule_schema_nested_contract(api: ApiClient) -> None:
+    created = api.create_assessment("Nested Rule Schema")
+    api.set_question_set_yaml(created.id, QUESTION_SET_YAML)
+
+    nested_question_rules = api.try_list_compatible_rules(created.id, path="then_rules.0")
+    assert nested_question_rules.status_code == 200, nested_question_rules.text
+    assert "TEXT_MATCH" in [rule["type"] for rule in nested_question_rules.json()["rules"]]
+    assert "CONDITIONAL" not in [rule["type"] for rule in nested_question_rules.json()["rules"]]
+
+    nested_mcq = api.try_get_rule_schema(
+        created.id,
+        question_id="q3",
+        path="then_rules.0",
+        rule_type="MULTIPLE_CHOICE",
+    )
+    assert nested_mcq.status_code == 200, nested_mcq.text
+    nested_mcq_body = nested_mcq.json()
+    nested_qid_schema = nested_mcq_body["schema"]["properties"]["question_id"]
+    assert "const" not in nested_qid_schema
+    assert "readOnly" not in nested_qid_schema
+    assert nested_qid_schema["enum"] == ["q3"]
+    assert nested_mcq_body["initial_value"]["question_id"] == "q3"
+    assert nested_mcq_body["schema"]["properties"]["answer"]["items"]["enum"] == ["A", "B", "C"]
+
+    conditional = api.try_get_rule_schema(created.id, rule_type="CONDITIONAL")
+    assert conditional.status_code == 200, conditional.text
+    conditional_body = conditional.json()
+    assert conditional_body["schema"]["properties"]["if_rules"]["x-gradeflow"] == {
+        "input": "rule-list"
+    }
+    assert conditional_body["schema"]["properties"]["then_rules"]["x-gradeflow"] == {
+        "input": "rule-list"
+    }
+    assert conditional_body["schema"]["properties"]["else_rules"]["x-gradeflow"] == {
+        "input": "rule-list"
+    }
+
+    nested_value_rules = api.try_list_compatible_rules(
+        created.id,
+        question_id="q1",
+        path="rules.0",
+    )
+    assert nested_value_rules.status_code == 200, nested_value_rules.text
+    nested_value_types = [rule["type"] for rule in nested_value_rules.json()["rules"]]
+    assert "TEXT_MATCH" in nested_value_types
+    assert "NUMBER_EQUAL" not in nested_value_types
+
+
 def test_rule_create_ignores_client_supplied_id(api: ApiClient) -> None:
     created = api.create_assessment("Rule ID Authority")
     api.set_question_set_yaml(created.id, QUESTION_SET_YAML)
@@ -199,8 +428,10 @@ def test_rubric_overview_coverage_includes_rule_maps(api: ApiClient) -> None:
         """
 rules:
   - id: direct-q1
-    type: MANUAL
+    type: TEXT_MATCH
     question_id: q1
+    answers:
+      - Alice
   - id: global-q23
     type: PROGRAMMABLE_MULTI
     target_question_ids:
@@ -231,11 +462,15 @@ def test_rubric_stale_rules_sync_removes_top_level_rules(api: ApiClient) -> None
         """
 rules:
   - id: keep-q1
-    type: MANUAL
+    type: TEXT_MATCH
     question_id: q1
+    answers:
+      - Alice
   - id: stale-qx
-    type: MANUAL
+    type: TEXT_MATCH
     question_id: qx
+    answers:
+      - x
   - id: stale-global
     type: PROGRAMMABLE_MULTI
     target_question_ids:
@@ -263,11 +498,15 @@ def test_rubric_overview_returns_rules_coverage_stale_rules_and_status(api: ApiC
         """
 rules:
   - id: keep-q1
-    type: MANUAL
+    type: TEXT_MATCH
     question_id: q1
+    answers:
+      - Alice
   - id: stale-qx
-    type: MANUAL
+    type: TEXT_MATCH
     question_id: qx
+    answers:
+      - x
 """,
     )
 

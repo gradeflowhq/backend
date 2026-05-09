@@ -113,6 +113,25 @@ def _find_schema_with_property(openapi: OpenAPI, prop_name: str) -> SchemaDict |
     return None
 
 
+def _find_array_item_union_schema(openapi: OpenAPI, prop_name: str) -> SchemaDict | None:
+    for sch in _schemas(openapi).values():
+        s = _resolve_ref(openapi, sch)
+        props = s.get("properties")
+        if not isinstance(props, dict):
+            continue
+        prop = props.get(prop_name)
+        if not isinstance(prop, dict):
+            continue
+        prop_schema = _resolve_ref(openapi, cast(SchemaDict, prop))
+        items = prop_schema.get("items")
+        if not isinstance(items, dict):
+            continue
+        item_schema = _resolve_ref(openapi, cast(SchemaDict, items))
+        if isinstance(item_schema.get("oneOf") or item_schema.get("anyOf"), list):
+            return item_schema
+    return None
+
+
 # Local traversal helper for unit tests (avoid importing private functions)
 def _traverse_and_convert_local(node: JSONValue) -> None:
     if isinstance(node, dict):
@@ -282,12 +301,8 @@ def test_patcher_preserves_discriminated_unions_where_used() -> None:
     discriminator = value_schema.get("discriminator")
     assert isinstance(discriminator, dict) and "propertyName" in discriminator
 
-    rub_like = _find_schema_with_property(openapi, "rules")
-    assert isinstance(rub_like, dict), "Could not find a schema with 'rules' property"
-    rules_prop: SchemaDict = _get_prop_schema(openapi, rub_like, "rules")
-    items_schema = rules_prop.get("items")
-    assert isinstance(items_schema, dict), "rubric.rules.items missing"
-    items_schema = _resolve_ref(openapi, cast(SchemaDict, items_schema))
+    items_schema = _find_array_item_union_schema(openapi, "rules")
+    assert isinstance(items_schema, dict), "Could not find rubric.rules item union schema"
 
     union2 = items_schema.get("oneOf") or items_schema.get("anyOf")
     assert isinstance(union2, list)

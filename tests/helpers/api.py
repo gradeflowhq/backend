@@ -455,6 +455,43 @@ class ApiClient:
             headers=self._auth_header,
         )
 
+    def try_list_compatible_rules(
+        self,
+        assessment_id: str,
+        *,
+        question_id: str | None = None,
+        path: str | None = None,
+    ) -> Response:
+        params: dict[str, str] = {}
+        if question_id is not None:
+            params["question_id"] = question_id
+        if path is not None:
+            params["path"] = path
+        return self.client.get(
+            f"/assessments/{assessment_id}/rules/list",
+            params=params,
+            headers=self._auth_header,
+        )
+
+    def try_get_rule_schema(
+        self,
+        assessment_id: str,
+        *,
+        rule_type: str,
+        question_id: str | None = None,
+        path: str | None = None,
+    ) -> Response:
+        params = {"type": rule_type}
+        if question_id is not None:
+            params["question_id"] = question_id
+        if path is not None:
+            params["path"] = path
+        return self.client.get(
+            f"/assessments/{assessment_id}/rules/schema",
+            params=params,
+            headers=self._auth_header,
+        )
+
     def try_create_rule(self, assessment_id: str, rule: dict[str, object]) -> Response:
         return self.client.post(
             f"/assessments/{assessment_id}/rules",

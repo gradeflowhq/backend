@@ -26,11 +26,20 @@ from gradeflow_backend.schemas.rubrics import (
     ValidateRubricRequest,
     ValidateRubricResponse,
 )
+from gradeflow_backend.schemas.rules import (
+    CompatibleRulesResponse,
+    RuleSchemaResponse,
+)
 from gradeflow_backend.services.exceptions import (
     BadRequestError,
     NotFoundError,
     RubricValidationError,
 )
+from gradeflow_backend.services.rule_schemas import (
+    build_rule_schema,
+    list_compatible_rules,
+)
+from gradeflow_backend.services.submissions import derive_raw_submissions
 from gradeflow_backend.services.yaml_artifacts import YamlArtifactService
 from gradeflow_backend.utils.filenames import make_safe_export_basename
 from gradeflow_backend.utils.loaders import load_question_set, load_rubric
@@ -73,6 +82,38 @@ class RubricService(YamlArtifactService[Rubric, RubricResponse, ExportRubricResp
         rubric = self._load_stored(self._get_or_404(assessment_id))
         index = self._rule_index(rule_id, rubric)
         return rubric.rules[index]
+
+    def list_compatible_rules(
+        self,
+        assessment_id: str,
+        *,
+        question_id: str | None = None,
+        path: str | None = None,
+    ) -> CompatibleRulesResponse:
+        assessment = self._get_or_404(assessment_id)
+        question_set = load_question_set(assessment)
+        return list_compatible_rules(question_set, question_id=question_id, path=path)
+
+    def get_rule_schema(
+        self,
+        assessment_id: str,
+        *,
+        rule_type: str,
+        question_id: str | None = None,
+        path: str | None = None,
+    ) -> RuleSchemaResponse:
+        assessment = self._get_or_404(assessment_id)
+        question_set = load_question_set(assessment)
+        submissions = (
+            question_set.parse(derive_raw_submissions(assessment)) if assessment.source_data else []
+        )
+        return build_rule_schema(
+            question_set,
+            rule_type=rule_type,
+            question_id=question_id,
+            path=path,
+            submissions=submissions,
+        )
 
     def create_rule(self, assessment_id: str, req: RuleCreateRequest) -> RubricResponse:
         assessment = self._get_or_404(assessment_id)

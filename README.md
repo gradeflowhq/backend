@@ -1,6 +1,6 @@
 # GradeFlow Backend
 
-A FastAPI backend that wraps the GradeFlow Engine to manage assessments, question sets, rubrics, submissions, and grading. It uses Zitadel as an external identity provider for authentication, with role-based membership and typed request/response models.
+A FastAPI backend that wraps the GradeFlow Engine to manage assessments, question sets, rubrics, rules, submissions, and grading. It uses Zitadel as an external identity provider for authentication, with role-based membership and typed request/response models.
 
 This is intended as a thin layer around the GradeFlow Engine.
 
@@ -188,9 +188,21 @@ Route guards:
   - PUT /assessments/{id}/rubric -> set by model (editor)
   - PUT /assessments/{id}/rubric/upload -> set by raw data (editor)
   - PUT /assessments/{id}/rubric/import -> import via adapter (editor)
+  - POST /assessments/{id}/rubric/empty -> initialize an empty rubric (editor)
+  - POST /assessments/{id}/rubric/staleness/acknowledge -> acknowledge rubric staleness (editor)
   - POST /assessments/{id}/rubric/validate -> validate (member)
-  - POST /assessments/{id}/rubric/coverage -> coverage report (member)
+  - POST /assessments/{id}/rubric/sync -> sync rubric to the current question set (editor)
+  - GET /assessments/{id}/rubric/overview -> overview and coverage by question (member)
   - DELETE /assessments/{id}/rubric -> delete (editor)
+
+- Rules
+  - GET /assessments/{id}/rules -> list stored rules (member)
+  - POST /assessments/{id}/rules -> create rule (editor; server assigns ids)
+  - GET /assessments/{id}/rules/list?question_id={qid}&path={path} -> compatible rule types for a global, question, or nested context (member)
+  - GET /assessments/{id}/rules/schema?type={rule_type}&question_id={qid}&path={path} -> contextual JSON Schema and initial value (member)
+  - GET /assessments/{id}/rules/{rule_id} -> get rule (member)
+  - PUT /assessments/{id}/rules/{rule_id} -> update rule (editor)
+  - DELETE /assessments/{id}/rules/{rule_id} -> delete rule (editor)
 
 - Submissions
   - PUT /assessments/{id}/submissions/source -> upload raw CSV source data (editor)
@@ -222,6 +234,16 @@ Route guards:
 
 Each assessment tracks fine-grained `updated_at` timestamps for source data, question set, rubric, and grading results. The `SectionStatus` model (included in question set, rubric, and grading responses) contains an `updated_at` timestamp and an `is_stale` flag. Staleness cascades through the pipeline: if source data is updated after the question set, the question set is marked stale; if the question set is stale or updated after the rubric, the rubric is marked stale; and if the rubric is stale or updated after the grading results, the results are marked stale. This lets the frontend prompt users to re-run downstream steps when upstream data changes.
 
+### Rule Schema Endpoints
+
+Rule endpoints keep the backend thin. The backend loads the assessment question set and submissions, builds an engine `RuleContext`, and delegates compatibility and schema generation to `gradeflow_engine.rules.schema`.
+
+- Omit `question_id` to request global rules.
+- Provide `question_id` to request rules for a question.
+- Provide `path` to request schemas for nested rule fields or multi-valued value slots.
+- Schema responses include JSON Schema and an `initial_value`; they do not include backend-owned UI schemas.
+- Clients should use standard JSON Schema fields plus engine-owned `x-gradeflow` metadata.
+
 ### Response/Request Models
 
 See `gradeflow_backend/schemas/` for Pydantic models. Notable external models from GradeFlow Engine:
@@ -247,6 +269,10 @@ Key backend schemas:
 - `JobStatusResponse` — `job_id`, `status` (`queued` | `running` | `completed` | `failed`), and optional `error`
 - `ExportQuestionSetRequest` / `ExportQuestionSetResponse` — serializer config and exported file data
 - `ExportRubricRequest` / `ExportRubricResponse` — serializer config and exported file data
+- `RulesResponse` — stored rubric rules plus section status
+- `RuleTypeOption` / `CompatibleRulesResponse` — compatible rule type, label, and description options for a context
+- `RuleSchemaResponse` — contextual rule JSON Schema and initial value
+- `RubricOverviewResponse` — rubric coverage and per-question rule overview
 - `SourceDataResponse` — parsed `headers`, `rows`, `total_rows`, and `student_id_column` for the uploaded CSV
 - `SubmissionsImportConfig` — optional `answer_columns` list and optional `point_columns` mapping (`question_id` -> CSV column name)
 - `SectionStatus` — `updated_at` timestamp and `is_stale` flag, included in question set, rubric, and grading responses

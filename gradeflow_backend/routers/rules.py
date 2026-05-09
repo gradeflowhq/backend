@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 from gradeflow_engine.rules.models import QuestionRule
 
 from gradeflow_backend.dependencies.memberships import member_guard_factory, role_guard_factory
@@ -8,6 +8,10 @@ from gradeflow_backend.schemas.rubrics import (
     RuleCreateRequest,
     RulesResponse,
     RuleUpdateRequest,
+)
+from gradeflow_backend.schemas.rules import (
+    CompatibleRulesResponse,
+    RuleSchemaResponse,
 )
 from gradeflow_backend.services.rubrics import RubricService
 
@@ -31,6 +35,34 @@ def create_rule(
     _u: str = Depends(role_guard_factory("editor")),
 ) -> RubricResponse:
     return svc.create_rule(assessment_id, req)
+
+
+@router.get("/list", response_model=CompatibleRulesResponse)
+def list_compatible_rules(
+    assessment_id: str,
+    question_id: str | None = None,
+    path: str | None = None,
+    svc: RubricService = Depends(get_rubric_service),
+    _u: str = Depends(member_guard_factory()),
+) -> CompatibleRulesResponse:
+    return svc.list_compatible_rules(assessment_id, question_id=question_id, path=path)
+
+
+@router.get("/schema", response_model=RuleSchemaResponse)
+def get_rule_schema(
+    assessment_id: str,
+    rule_type: str = Query(..., alias="type"),
+    question_id: str | None = None,
+    path: str | None = None,
+    svc: RubricService = Depends(get_rubric_service),
+    _u: str = Depends(member_guard_factory()),
+) -> RuleSchemaResponse:
+    return svc.get_rule_schema(
+        assessment_id,
+        rule_type=rule_type,
+        question_id=question_id,
+        path=path,
+    )
 
 
 @router.get("/{rule_id}", response_model=QuestionRule)

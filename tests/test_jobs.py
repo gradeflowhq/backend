@@ -14,10 +14,16 @@ from tests.helpers.data import QUESTION_SET_YAML, RUBRIC_YAML, SUBMISSIONS_CSV
 class _FailingExecutor(GradingJobExecutor):
     def __init__(self, error_message: str) -> None:
         self._error_message = error_message
-        self._job_id = "job-failed-run"
+        self._job_id = ""
 
-    def submit(self, spec: GradingJobSpec, callback_url: str, callback_secret: str) -> str:
-        return self._job_id
+    def submit(
+        self,
+        job_id: str,
+        spec: GradingJobSpec,
+        callback_url: str,
+        callback_secret: str,
+    ) -> None:
+        self._job_id = job_id
 
     def get_status(self, job_id: str) -> JobStatus:
         if job_id != self._job_id:
@@ -37,7 +43,13 @@ class _FailingExecutor(GradingJobExecutor):
 
 
 class _SubmitFailingExecutor(GradingJobExecutor):
-    def submit(self, spec: GradingJobSpec, callback_url: str, callback_secret: str) -> str:
+    def submit(
+        self,
+        job_id: str,
+        spec: GradingJobSpec,
+        callback_url: str,
+        callback_secret: str,
+    ) -> None:
         raise ConnectionError("Nomad is unavailable")
 
     def get_status(self, job_id: str) -> JobStatus:

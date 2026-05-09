@@ -74,6 +74,7 @@ class InMemoryContainerJobExecutor(InMemoryBaseJobExecutor):
         callback_url: str,
         callback_secret: str,
         assessment_id: str,
+        job_id: str,
         job_type: str,
         point_columns_json: str = "{}",
         remove_adjustments: bool = False,
@@ -95,6 +96,7 @@ class InMemoryContainerJobExecutor(InMemoryBaseJobExecutor):
 
         gradeflow_env = build_gradeflow_env(
             assessment_id=assessment_id,
+            job_id=job_id,
             job_type=job_type,
             callback_url=callback_url,
             callback_secret=callback_secret,

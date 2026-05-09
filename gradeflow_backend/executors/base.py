@@ -19,9 +19,15 @@ class GradingJobExecutor(ABC):
     """
 
     @abstractmethod
-    def submit(self, spec: GradingJobSpec, callback_url: str, callback_secret: str) -> str:
+    def submit(
+        self,
+        job_id: str,
+        spec: GradingJobSpec,
+        callback_url: str,
+        callback_secret: str,
+    ) -> None:
         """
-        Enqueue the job for execution and return a job_id.
+        Enqueue the job for execution.
         Preview jobs should be prioritized over run jobs.
         """
         raise NotImplementedError

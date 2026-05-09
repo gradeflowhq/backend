@@ -1,6 +1,5 @@
 import logging
 import time
-import uuid
 
 import httpx
 
@@ -20,8 +19,13 @@ class SynchronousJobExecutor(GradingJobExecutor):
         self._status: dict[str, JobStatus] = {}
         self._errors: dict[str, str | None] = {}
 
-    def submit(self, spec: GradingJobSpec, callback_url: str, callback_secret: str) -> str:
-        job_id = f"job-{uuid.uuid4().hex}-{spec.type}"
+    def submit(
+        self,
+        job_id: str,
+        spec: GradingJobSpec,
+        callback_url: str,
+        callback_secret: str,
+    ) -> None:
         self._status[job_id] = "running"
         self._errors[job_id] = None
         logger.info(
@@ -49,6 +53,7 @@ class SynchronousJobExecutor(GradingJobExecutor):
 
             # Build result
             result = GradingJobResult(
+                job_id=job_id,
                 assessment_id=spec.assessment_id,
                 type=spec.type,
                 submissions=submissions,
@@ -84,8 +89,6 @@ class SynchronousJobExecutor(GradingJobExecutor):
                 "Synchronous job finished",
                 extra={"job_id": job_id, "duration_s": round(dur, 4)},
             )
-
-        return job_id
 
     def get_status(self, job_id: str) -> JobStatus:
         if job_id not in self._status:

@@ -1,5 +1,14 @@
+from datetime import UTC, datetime, timedelta
+
+import pytest
+from sqlalchemy.orm import Session
+
+from gradeflow_backend.config import get_settings
+from gradeflow_backend.models.grading_job import GradingJobRecord
 from tests.helpers.api import ApiClient
 from tests.helpers.data import QUESTION_SET_YAML, RUBRIC_YAML, SUBMISSIONS_CSV
+
+T0 = datetime(2026, 1, 1, tzinfo=UTC)
 
 
 def _rule_exact_match_q1() -> dict[str, object]:
@@ -164,6 +173,168 @@ def test_get_grading_job_found(api: ApiClient) -> None:
     body = r.json()
     assert "job_id" in body
     assert "url" in body
+
+
+def test_grading_job_record_duration_is_derived() -> None:
+    record = GradingJobRecord(
+        job_id="job-duration-run",
+        assessment_id="assessment-duration",
+        type="run",
+        created_at=T0,
+        completed_at=T0 + timedelta(seconds=42),
+    )
+
+    assert record.duration == timedelta(seconds=42)
+    assert record.duration_seconds == 42
+
+
+def test_grading_job_includes_completed_at_and_duration(api: ApiClient) -> None:
+    created = api.create_assessment("Completed Job Metadata")
+    api.set_question_set_yaml(created.id, QUESTION_SET_YAML)
+    api.set_rubric_yaml(created.id, RUBRIC_YAML)
+    api.set_submissions_csv(created.id, SUBMISSIONS_CSV)
+
+    job = api.run_grading_start(created.id)
+
+    assert job.created_at is not None
+    assert job.completed_at is not None
+    assert job.duration_seconds is not None
+    assert job.duration_seconds >= 0
+    assert job.estimated_duration_seconds is None
+    assert job.estimated_completion_at is None
+
+
+def test_grading_job_estimate_prefers_same_assessment_type(
+    api: ApiClient,
+    test_session: Session,
+) -> None:
+    target = api.create_assessment("Estimated Job Target")
+    other = api.create_assessment("Estimated Job Other")
+    latest_created_at = T0 + timedelta(minutes=10)
+    test_session.add_all(
+        [
+            GradingJobRecord(
+                job_id="job-other-history-run",
+                assessment_id=other.id,
+                type="run",
+                created_at=T0,
+                completed_at=T0 + timedelta(seconds=100),
+            ),
+            GradingJobRecord(
+                job_id="job-target-history-1-run",
+                assessment_id=target.id,
+                type="run",
+                created_at=T0 + timedelta(minutes=1),
+                completed_at=T0 + timedelta(minutes=1, seconds=10),
+            ),
+            GradingJobRecord(
+                job_id="job-target-history-2-run",
+                assessment_id=target.id,
+                type="run",
+                created_at=T0 + timedelta(minutes=2),
+                completed_at=T0 + timedelta(minutes=2, seconds=20),
+            ),
+            GradingJobRecord(
+                job_id="job-target-latest-run",
+                assessment_id=target.id,
+                type="run",
+                created_at=latest_created_at,
+            ),
+        ]
+    )
+    test_session.commit()
+
+    job = api.get_grading_job(target.id)
+
+    assert job.job_id == "job-target-latest-run"
+    assert job.estimated_duration_seconds == pytest.approx(15.0)
+    assert job.estimated_completion_at == latest_created_at + timedelta(seconds=15)
+
+
+def test_grading_job_estimate_uses_recent_bounded_sample(
+    api: ApiClient,
+    test_session: Session,
+) -> None:
+    target = api.create_assessment("Estimated Job Recent Sample")
+    sample_size = get_settings().grading.completed_job_estimate_sample_size
+    latest_created_at = T0 + timedelta(days=1)
+    old_created_at = T0 - timedelta(days=1)
+    records = [
+        GradingJobRecord(
+            job_id="job-target-old-outlier-run",
+            assessment_id=target.id,
+            type="run",
+            created_at=old_created_at,
+            completed_at=old_created_at + timedelta(seconds=1000),
+        )
+    ]
+    for i in range(sample_size):
+        created_at = T0 + timedelta(minutes=i + 1)
+        records.append(
+            GradingJobRecord(
+                job_id=f"job-target-recent-{i}-run",
+                assessment_id=target.id,
+                type="run",
+                created_at=created_at,
+                completed_at=created_at + timedelta(seconds=10),
+            )
+        )
+    records.append(
+        GradingJobRecord(
+            job_id="job-target-latest-bounded-run",
+            assessment_id=target.id,
+            type="run",
+            created_at=latest_created_at,
+        )
+    )
+    test_session.add_all(records)
+    test_session.commit()
+
+    job = api.get_grading_job(target.id)
+
+    assert job.job_id == "job-target-latest-bounded-run"
+    assert job.estimated_duration_seconds == pytest.approx(10.0)
+    assert job.estimated_completion_at == latest_created_at + timedelta(seconds=10)
+
+
+def test_grading_job_estimate_falls_back_to_other_assessments_same_type(
+    api: ApiClient,
+    test_session: Session,
+) -> None:
+    target = api.create_assessment("Estimated Job Fallback Target")
+    other = api.create_assessment("Estimated Job Fallback Other")
+    latest_created_at = T0 + timedelta(minutes=5)
+    test_session.add_all(
+        [
+            GradingJobRecord(
+                job_id="job-other-preview-history",
+                assessment_id=other.id,
+                type="preview",
+                created_at=T0,
+                completed_at=T0 + timedelta(seconds=5),
+            ),
+            GradingJobRecord(
+                job_id="job-other-run-history",
+                assessment_id=other.id,
+                type="run",
+                created_at=T0 + timedelta(minutes=1),
+                completed_at=T0 + timedelta(minutes=1, seconds=30),
+            ),
+            GradingJobRecord(
+                job_id="job-target-latest-fallback-run",
+                assessment_id=target.id,
+                type="run",
+                created_at=latest_created_at,
+            ),
+        ]
+    )
+    test_session.commit()
+
+    job = api.get_grading_job(target.id)
+
+    assert job.job_id == "job-target-latest-fallback-run"
+    assert job.estimated_duration_seconds == pytest.approx(30.0)
+    assert job.estimated_completion_at == latest_created_at + timedelta(seconds=30)
 
 
 def test_grading_run_removes_adjustments_flag(api: ApiClient) -> None:

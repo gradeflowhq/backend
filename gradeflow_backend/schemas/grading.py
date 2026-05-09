@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Annotated, Literal
 
 from gradeflow_engine.question_sets.model import QuestionSet
@@ -108,12 +109,6 @@ JobType = Literal["run", "preview"]
 JobStatus = Literal["queued", "running", "completed", "failed"]
 
 
-class JobStatusResponse(BaseModel):
-    job_id: str
-    status: JobStatus
-    error: str | None = None
-
-
 class GradingJobSpec(BaseModel):
     assessment_id: str
     type: JobType
@@ -129,6 +124,7 @@ class GradingJobSpec(BaseModel):
 
 
 class GradingJobResult(BaseModel):
+    job_id: str
     assessment_id: str
     type: JobType
     submissions: list[Submission]
@@ -138,6 +134,21 @@ class GradingJobResult(BaseModel):
     )
 
 
-class GradingJob(BaseModel):
+class JobTiming(BaseModel):
+    completed_at: datetime | None = None
+    duration_seconds: float | None = None
+    estimated_duration_seconds: float | None = None
+    estimated_completion_at: datetime | None = None
+
+
+class JobStatusResponse(JobTiming):
+    job_id: str
+    status: JobStatus
+    error: str | None = None
+    created_at: datetime
+
+
+class GradingJob(JobTiming):
     job_id: str
     url: str
+    created_at: datetime

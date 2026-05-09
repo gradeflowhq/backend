@@ -3,7 +3,6 @@ import json
 import logging
 import tempfile
 import threading
-import uuid
 from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
@@ -88,9 +87,14 @@ class InMemoryBaseJobExecutor(GradingJobExecutor):
 
     # ------- GradingJobExecutor API -------
 
-    def submit(self, spec: GradingJobSpec, callback_url: str, callback_secret: str) -> str:
+    def submit(
+        self,
+        job_id: str,
+        spec: GradingJobSpec,
+        callback_url: str,
+        callback_secret: str,
+    ) -> None:
         self.start()
-        job_id = f"job-{uuid.uuid4().hex}-{spec.type}"
         job = _Job(id=job_id, spec=spec, callback_url=callback_url, callback_secret=callback_secret)
         with self._lock:
             self._status[job_id] = "queued"
@@ -100,7 +104,6 @@ class InMemoryBaseJobExecutor(GradingJobExecutor):
             else:
                 self._jobs_run.append(job)
             self._cv.notify()
-        return job_id
 
     def get_status(self, job_id: str) -> JobStatus:
         with self._lock:
@@ -237,6 +240,7 @@ class InMemoryBaseJobExecutor(GradingJobExecutor):
                 callback_url=job.callback_url,
                 callback_secret=job.callback_secret,
                 assessment_id=spec.assessment_id,
+                job_id=job.id,
                 job_type=spec.type,
                 point_columns_json=json.dumps(render_point_columns_map(spec)),
                 remove_adjustments=spec.remove_adjustments,
@@ -258,6 +262,7 @@ class InMemoryBaseJobExecutor(GradingJobExecutor):
         callback_url: str,
         callback_secret: str,
         assessment_id: str,
+        job_id: str,
         job_type: str,  # "run" | "preview"
         point_columns_json: str = "{}",
         remove_adjustments: bool = False,

@@ -10,6 +10,7 @@ from gradeflow_backend.executors.env import (
     CALLBACK_URL_ENV,
     ENGINE_BIN_ENV,
     GRADE_QUESTIONS_WITHOUT_RULE_ENV,
+    JOB_ID_ENV,
     JOB_TYPE_ENV,
     OUT_PATH_ENV,
     OVERRIDE_RESULTS_ENV,
@@ -27,6 +28,7 @@ from gradeflow_backend.executors.env import (
 def test_build_gradeflow_env_stringifies_contract_values() -> None:
     env = build_gradeflow_env(
         assessment_id="a1",
+        job_id="job-a1-preview",
         job_type="preview",
         callback_url="https://example.test/callback",
         callback_secret="secret-1",
@@ -46,6 +48,7 @@ def test_build_gradeflow_env_stringifies_contract_values() -> None:
 
     assert env == {
         ASSESSMENT_ID_ENV: "a1",
+        JOB_ID_ENV: "job-a1-preview",
         JOB_TYPE_ENV: "preview",
         CALLBACK_URL_ENV: "https://example.test/callback",
         CALLBACK_SECRET_ENV: "secret-1",
@@ -69,6 +72,7 @@ def test_entrypoint_config_reads_explicit_gradeflow_aliases(
 ) -> None:
     env = build_gradeflow_env(
         assessment_id="a2",
+        job_id="job-a2-run",
         job_type="run",
         callback_url="https://example.test/callback",
         callback_secret="secret-2",
@@ -92,6 +96,7 @@ def test_entrypoint_config_reads_explicit_gradeflow_aliases(
     cfg = Config()  # type: ignore[call-arg]
 
     assert cfg.assessment_id == "a2"
+    assert cfg.job_id == "job-a2-run"
     assert cfg.job_type == "run"
     assert cfg.callback_url == "https://example.test/callback"
     assert cfg.callback_secret == "secret-2"

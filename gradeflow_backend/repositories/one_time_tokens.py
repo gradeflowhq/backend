@@ -31,3 +31,8 @@ class OneTimeTokenRepository(BaseRepository):
         obj = self.get(token)
         obj.consumed_at = datetime.now(UTC)
         self.session().flush()
+
+    def revoke(self, token: str) -> None:
+        obj = self.get(token)
+        obj.revoked = True
+        self.session().flush()

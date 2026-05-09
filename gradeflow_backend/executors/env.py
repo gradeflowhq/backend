@@ -4,6 +4,7 @@ from typing import Final
 GRADEFLOW_ENV_PREFIX: Final = "GRADEFLOW_"
 
 ASSESSMENT_ID_ENV: Final = f"{GRADEFLOW_ENV_PREFIX}ASSESSMENT_ID"
+JOB_ID_ENV: Final = f"{GRADEFLOW_ENV_PREFIX}JOB_ID"
 JOB_TYPE_ENV: Final = f"{GRADEFLOW_ENV_PREFIX}JOB_TYPE"
 CALLBACK_URL_ENV: Final = f"{GRADEFLOW_ENV_PREFIX}CALLBACK_URL"
 CALLBACK_SECRET_ENV: Final = f"{GRADEFLOW_ENV_PREFIX}CALLBACK_SECRET"
@@ -24,6 +25,7 @@ GRADE_QUESTIONS_WITHOUT_RULE_ENV: Final = f"{GRADEFLOW_ENV_PREFIX}GRADE_QUESTION
 def build_gradeflow_env(
     *,
     assessment_id: str,
+    job_id: str,
     job_type: str,
     callback_url: str,
     callback_secret: str,
@@ -42,6 +44,7 @@ def build_gradeflow_env(
 ) -> dict[str, str]:
     return {
         ASSESSMENT_ID_ENV: assessment_id,
+        JOB_ID_ENV: job_id,
         JOB_TYPE_ENV: job_type,
         CALLBACK_URL_ENV: callback_url,
         CALLBACK_SECRET_ENV: callback_secret,

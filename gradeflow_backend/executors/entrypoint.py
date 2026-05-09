@@ -19,6 +19,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 # ---------------------------------------------------------------------------
 _PREFIX = "GRADEFLOW_"
 ASSESSMENT_ID_ENV = f"{_PREFIX}ASSESSMENT_ID"
+JOB_ID_ENV = f"{_PREFIX}JOB_ID"
 JOB_TYPE_ENV = f"{_PREFIX}JOB_TYPE"
 CALLBACK_URL_ENV = f"{_PREFIX}CALLBACK_URL"
 CALLBACK_SECRET_ENV = f"{_PREFIX}CALLBACK_SECRET"
@@ -60,6 +61,7 @@ class Config(BaseSettings):
     model_config = SettingsConfigDict(case_sensitive=False)
 
     assessment_id: str = Field(..., validation_alias=ASSESSMENT_ID_ENV)
+    job_id: str = Field(..., validation_alias=JOB_ID_ENV)
     job_type: str = Field(..., validation_alias=JOB_TYPE_ENV)
     callback_url: str = Field(..., validation_alias=CALLBACK_URL_ENV)
     callback_secret: str = Field(..., validation_alias=CALLBACK_SECRET_ENV)
@@ -96,6 +98,7 @@ class Config(BaseSettings):
 
 
 class Payload(BaseModel):
+    job_id: str
     assessment_id: str
     type: str
     submissions: list[Submission]
@@ -194,6 +197,7 @@ def main() -> int:
         return 1
 
     payload = Payload(
+        job_id=cfg.job_id,
         assessment_id=cfg.assessment_id,
         type=cfg.job_type,
         submissions=items,

@@ -796,12 +796,14 @@ class ApiClient:
         self,
         token: str,
         *,
+        job_id: str = "job-test-callback-run",
         assessment_id: str,
         type: str,
         submissions: list[dict[str, object]] | None = None,
         remove_adjustments: bool = False,
     ) -> Response:
-        payload: dict[str, object | list[dict[str, object]] | bool] = {
+        payload: dict[str, object] = {
+            "job_id": job_id,
             "assessment_id": assessment_id,
             "type": type,
             "remove_adjustments": remove_adjustments,

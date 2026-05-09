@@ -1,6 +1,5 @@
 import json
 import logging
-import uuid
 from typing import Any, cast
 
 import nomad.api.exceptions  # type: ignore[import-untyped]
@@ -22,7 +21,6 @@ from gradeflow_backend.utils.renderers import (
 
 logger = logging.getLogger(__name__)
 
-JOB_PREFIX = "gradeflow"
 DEFAULT_WORKDIR = "/workspace"
 DEFAULT_IMAGE = "gradeflow-engine:latest"
 DEFAULT_ENGINE_BIN = "gradeflow-engine"
@@ -73,6 +71,7 @@ def _build_nomad_job(
 
     env = build_gradeflow_env(
         assessment_id=spec.assessment_id,
+        job_id=job_id,
         job_type=spec.type,
         callback_url=callback_url,
         callback_secret=callback_secret,
@@ -168,9 +167,13 @@ class NomadJobExecutor(GradingJobExecutor):
             timeout=timeout_s,
         )
 
-    def submit(self, spec: GradingJobSpec, callback_url: str, callback_secret: str) -> str:
-        job_id = f"{JOB_PREFIX}-{uuid.uuid4().hex}-{spec.type}"
-
+    def submit(
+        self,
+        job_id: str,
+        spec: GradingJobSpec,
+        callback_url: str,
+        callback_secret: str,
+    ) -> None:
         job = _build_nomad_job(
             job_id,
             spec,
@@ -186,8 +189,6 @@ class NomadJobExecutor(GradingJobExecutor):
         logger.info("Registering Nomad job", extra={"job_id": job_id})
 
         self._nomad.jobs.register_job(job)
-
-        return job_id
 
     def get_status(self, job_id: str) -> JobStatus:
         try:

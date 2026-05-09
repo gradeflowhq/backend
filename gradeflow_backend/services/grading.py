@@ -1,5 +1,6 @@
 import random
 from typing import Any
+from typing import cast as type_cast
 
 import yaml
 from fastapi import Request
@@ -176,16 +177,23 @@ class GradingService(BaseService):
         return self._grading_response(self._get_or_404(assessment_id))
 
     def get_job(self, assessment_id: str, type: JobType, request: Request) -> GradingJob:
-        job_id = self.grading_jobs.get_job_id(assessment_id, type)
-        if not job_id:
+        record = self.grading_jobs.get_latest(assessment_id, type)
+        if record is None:
             raise NotFoundError("No job found for this assessment")
-        return build_grading_job(request, job_id)
+        return build_grading_job(
+            request,
+            record,
+            estimated_duration_seconds=self.grading_jobs.estimate_duration_seconds(
+                record.assessment_id,
+                type_cast(JobType, record.type),
+            ),
+        )
 
     def cancel_job(self, assessment_id: str, type: JobType, jobs: JobsService) -> None:
-        job_id = self.grading_jobs.get_job_id(assessment_id, type)
-        if not job_id:
+        record = self.grading_jobs.get_latest(assessment_id, type)
+        if record is None:
             raise NotFoundError("No job found for this assessment")
-        jobs.cancel_job(job_id)
+        jobs.cancel_job(record.job_id)
 
     def delete(self, assessment_id: str) -> None:
         self._get_or_404(assessment_id)

@@ -112,6 +112,11 @@ class GradingSettings(BaseModel):
         ge=1,
         description="Maximum grading-preview requests allowed per client per minute.",
     )
+    completed_job_estimate_sample_size: int = Field(
+        default=10,
+        ge=1,
+        description="Number of recent completed grading jobs used to estimate job duration.",
+    )
 
 
 class AppSettings(BaseSettings):

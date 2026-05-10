@@ -1,5 +1,4 @@
 import logging
-from typing import cast as type_cast
 
 import valkey
 import yaml
@@ -7,7 +6,7 @@ from fastapi import Request
 from sqlalchemy.exc import NoResultFound
 from sqlalchemy.orm import Session
 
-from gradeflow_backend.executors.base import GradingJobExecutor
+from gradeflow_backend.executors.base import GradingJobExecutor, format_job_error
 from gradeflow_backend.executors.exceptions import JobNotFoundError
 from gradeflow_backend.repositories.assessments import AssessmentRepository
 from gradeflow_backend.repositories.grading_jobs import GradingJobRepository
@@ -102,7 +101,7 @@ class JobsService:
             record,
             estimated_duration_seconds=self.grading_jobs.estimate_duration_seconds(
                 record.assessment_id,
-                type_cast(JobType, record.type),
+                record.type,
             ),
         )
 
@@ -112,33 +111,43 @@ class JobsService:
         except NoResultFound as e:
             raise NotFoundError("Job not found") from e
 
-        try:
-            status = "completed" if record.is_completed else self.executor.get_status(job_id)
-            error = self.executor.get_error(job_id) if status == "failed" else None
-            if status == "completed" and not record.is_completed:
-                record = self.grading_jobs.mark_completed(job_id)
-            return build_job_status_response(
-                record=record,
-                status=status,
-                error=error,
-                estimated_duration_seconds=self.grading_jobs.estimate_duration_seconds(
-                    record.assessment_id,
-                    type_cast(JobType, record.type),
-                ),
-            )
-        except JobNotFoundError as e:
-            raise NotFoundError("Job not found") from e
-        except Exception as e:
-            logger.exception("Executor failed to read job status", extra={"job_id": job_id})
-            raise ServiceUnavailableError(
-                "Unable to read grading job status. The grading executor is unavailable "
-                "or returned an unexpected response."
-            ) from e
+        if not record.is_finished:
+            try:
+                status = self.executor.get_status(job_id)
+                if status == "running":
+                    record = self.grading_jobs.mark_running(job_id)
+                elif status == "completed":
+                    record = self.grading_jobs.mark_completed(job_id)
+                elif status == "failed":
+                    record = self.grading_jobs.mark_failed(
+                        job_id,
+                        error=format_job_error(self.executor.get_error(job_id)),
+                    )
+            except JobNotFoundError:
+                record = self.grading_jobs.mark_failed(
+                    job_id,
+                    error="Grading job failed because the executor no longer has this job.",
+                )
+            except Exception as e:
+                logger.exception("Executor failed to read job status", extra={"job_id": job_id})
+                raise ServiceUnavailableError(
+                    "Unable to read grading job status. The grading executor is unavailable "
+                    "or returned an unexpected response."
+                ) from e
+
+        return build_job_status_response(
+            record=record,
+            estimated_duration_seconds=self.grading_jobs.estimate_duration_seconds(
+                record.assessment_id,
+                record.type,
+            ),
+        )
 
     def cancel_job(self, job_id: str) -> None:
         """Cancel a running or queued job by job_id."""
         try:
             self.executor.cancel(job_id)
+            self.grading_jobs.mark_failed(job_id, error="Job cancelled.")
         except JobNotFoundError as e:
             raise NotFoundError("Job not found") from e
         except Exception as e:

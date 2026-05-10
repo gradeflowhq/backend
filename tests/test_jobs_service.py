@@ -50,6 +50,6 @@ def test_full_grading_job_status_lifecycle(api: ApiClient) -> None:
     assert status.status == "completed"
     assert status.error is None
     assert status.created_at is not None
-    assert status.completed_at is not None
+    assert status.finished_at is not None
     assert status.duration_seconds is not None
     assert status.duration_seconds >= 0

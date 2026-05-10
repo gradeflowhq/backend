@@ -15,11 +15,11 @@ def blob_from_str(data: str, media_type: str, ext: str) -> DataBlob:
     return DataBlob(data=data.encode("utf-8"), media_type=media_type, extension=ext)
 
 
-def source_from_data(data: str | bytes) -> StringSource | BytesSource:
+def source_from_data(data: str | bytes | bytearray) -> StringSource | BytesSource:
     """
-    Build an engine source object from a str or bytes payload.
-    - bytes -> application/octet-stream with extension 'bin'
-    - str   -> text/plain with extension 'txt'
+    Build an engine source object from a str or bytes-like payload.
+    - bytes/bytearray -> application/octet-stream with extension 'bin'
+    - str             -> text/plain with extension 'txt'
     """
     if isinstance(data, (bytes, bytearray)):
         return BytesSource(

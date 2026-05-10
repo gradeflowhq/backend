@@ -181,15 +181,33 @@ def test_grading_job_record_duration_is_derived() -> None:
         job_id="job-duration-run",
         assessment_id="assessment-duration",
         type="run",
+        status="completed",
         created_at=T0,
-        completed_at=T0 + timedelta(seconds=42),
+        finished_at=T0 + timedelta(seconds=42),
     )
 
     assert record.duration == timedelta(seconds=42)
     assert record.duration_seconds == 42
 
 
-def test_grading_job_includes_completed_at_and_duration(api: ApiClient) -> None:
+def test_failed_grading_job_record_has_duration() -> None:
+    record = GradingJobRecord(
+        job_id="job-duration-failed-run",
+        assessment_id="assessment-duration",
+        type="run",
+        status="failed",
+        created_at=T0,
+        finished_at=T0 + timedelta(seconds=42),
+        error="Engine failed",
+    )
+
+    assert record.is_finished is True
+    assert record.is_completed is False
+    assert record.duration == timedelta(seconds=42)
+    assert record.duration_seconds == 42
+
+
+def test_grading_job_includes_finished_at_and_duration(api: ApiClient) -> None:
     created = api.create_assessment("Completed Job Metadata")
     api.set_question_set_yaml(created.id, QUESTION_SET_YAML)
     api.set_rubric_yaml(created.id, RUBRIC_YAML)
@@ -198,7 +216,9 @@ def test_grading_job_includes_completed_at_and_duration(api: ApiClient) -> None:
     job = api.run_grading_start(created.id)
 
     assert job.created_at is not None
-    assert job.completed_at is not None
+    assert job.status == "completed"
+    assert job.error is None
+    assert job.finished_at is not None
     assert job.duration_seconds is not None
     assert job.duration_seconds >= 0
     assert job.estimated_duration_seconds is None
@@ -218,22 +238,34 @@ def test_grading_job_estimate_prefers_same_assessment_type(
                 job_id="job-other-history-run",
                 assessment_id=other.id,
                 type="run",
+                status="completed",
                 created_at=T0,
-                completed_at=T0 + timedelta(seconds=100),
+                finished_at=T0 + timedelta(seconds=100),
             ),
             GradingJobRecord(
                 job_id="job-target-history-1-run",
                 assessment_id=target.id,
                 type="run",
+                status="completed",
                 created_at=T0 + timedelta(minutes=1),
-                completed_at=T0 + timedelta(minutes=1, seconds=10),
+                finished_at=T0 + timedelta(minutes=1, seconds=10),
             ),
             GradingJobRecord(
                 job_id="job-target-history-2-run",
                 assessment_id=target.id,
                 type="run",
+                status="completed",
                 created_at=T0 + timedelta(minutes=2),
-                completed_at=T0 + timedelta(minutes=2, seconds=20),
+                finished_at=T0 + timedelta(minutes=2, seconds=20),
+            ),
+            GradingJobRecord(
+                job_id="job-target-failed-ignored-run",
+                assessment_id=target.id,
+                type="run",
+                status="failed",
+                created_at=T0 + timedelta(minutes=3),
+                finished_at=T0 + timedelta(minutes=3, seconds=1),
+                error="Engine failed",
             ),
             GradingJobRecord(
                 job_id="job-target-latest-run",
@@ -265,8 +297,9 @@ def test_grading_job_estimate_uses_recent_bounded_sample(
             job_id="job-target-old-outlier-run",
             assessment_id=target.id,
             type="run",
+            status="completed",
             created_at=old_created_at,
-            completed_at=old_created_at + timedelta(seconds=1000),
+            finished_at=old_created_at + timedelta(seconds=1000),
         )
     ]
     for i in range(sample_size):
@@ -276,8 +309,9 @@ def test_grading_job_estimate_uses_recent_bounded_sample(
                 job_id=f"job-target-recent-{i}-run",
                 assessment_id=target.id,
                 type="run",
+                status="completed",
                 created_at=created_at,
-                completed_at=created_at + timedelta(seconds=10),
+                finished_at=created_at + timedelta(seconds=10),
             )
         )
     records.append(
@@ -311,15 +345,17 @@ def test_grading_job_estimate_falls_back_to_other_assessments_same_type(
                 job_id="job-other-preview-history",
                 assessment_id=other.id,
                 type="preview",
+                status="completed",
                 created_at=T0,
-                completed_at=T0 + timedelta(seconds=5),
+                finished_at=T0 + timedelta(seconds=5),
             ),
             GradingJobRecord(
                 job_id="job-other-run-history",
                 assessment_id=other.id,
                 type="run",
+                status="completed",
                 created_at=T0 + timedelta(minutes=1),
-                completed_at=T0 + timedelta(minutes=1, seconds=30),
+                finished_at=T0 + timedelta(minutes=1, seconds=30),
             ),
             GradingJobRecord(
                 job_id="job-target-latest-fallback-run",

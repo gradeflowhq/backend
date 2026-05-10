@@ -268,8 +268,8 @@ Key backend schemas:
 - `BulkGradeAdjustmentResponse` — `applied` count, `errors` list, and updated `result`
 - `GradingLimitConfig` — `limit`, `selection` (`first` | `random`), and optional `seed` for preview runs
 - `GradingPreviewRequest` — optional single `rule` and a `GradingLimitConfig`
-- `GradingJob` — returned by run / preview; contains `job_id` and a polling `url`
-- `JobStatusResponse` — `job_id`, `status` (`queued` | `running` | `completed` | `failed`), and optional `error`
+- `GradingJob` — returned by run / preview; contains `job_id`, `status`, `finished_at`, and a polling `url`
+- `JobStatusResponse` — `job_id`, `status` (`queued` | `running` | `completed` | `failed`), `finished_at`, elapsed `duration_seconds`, and optional `error`
 - `ExportQuestionSetRequest` / `ExportQuestionSetResponse` — serializer config and exported file data
 - `ExportRubricRequest` / `ExportRubricResponse` — serializer config and exported file data
 - `RulesResponse` — stored rubric rules plus section status

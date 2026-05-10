@@ -8,7 +8,6 @@ from gradeflow_backend.config import get_settings
 from gradeflow_backend.models.grading_job import GradingJobRecord
 from gradeflow_backend.schemas.grading import (
     GradingJob,
-    JobStatus,
     JobStatusResponse,
     JobTiming,
     JobType,
@@ -40,6 +39,8 @@ def build_grading_job(
     return GradingJob(
         job_id=record.job_id,
         url=job_url,
+        status=record.status,
+        error=record.error,
         created_at=ensure_utc(record.created_at),
         **build_job_timing(
             record,
@@ -51,14 +52,12 @@ def build_grading_job(
 def build_job_status_response(
     *,
     record: GradingJobRecord,
-    status: JobStatus,
-    error: str | None = None,
     estimated_duration_seconds: float | None = None,
 ) -> JobStatusResponse:
     return JobStatusResponse(
         job_id=record.job_id,
-        status=status,
-        error=error,
+        status=record.status,
+        error=record.error,
         created_at=ensure_utc(record.created_at),
         **build_job_timing(
             record,
@@ -73,14 +72,13 @@ def build_job_timing(
     estimated_duration_seconds: float | None = None,
 ) -> JobTiming:
     estimated_completion_at = None
-    if not record.is_completed and estimated_duration_seconds is not None:
+    if not record.is_finished and estimated_duration_seconds is not None:
         estimated_completion_at = ensure_utc(record.created_at) + timedelta(
             seconds=estimated_duration_seconds
         )
     return JobTiming(
-        is_completed=record.is_completed,
-        completed_at=ensure_utc(record.completed_at) if record.completed_at else None,
+        finished_at=ensure_utc(record.finished_at) if record.finished_at else None,
         duration_seconds=record.duration_seconds,
-        estimated_duration_seconds=estimated_duration_seconds if not record.is_completed else None,
+        estimated_duration_seconds=estimated_duration_seconds if not record.is_finished else None,
         estimated_completion_at=estimated_completion_at,
     )

@@ -157,8 +157,7 @@ class GradingJobResult(BaseModel):
 
 
 class JobTiming(BaseModel):
-    is_completed: bool
-    completed_at: datetime | None = None
+    finished_at: datetime | None = None
     duration_seconds: float | None = None
     estimated_duration_seconds: float | None = None
     estimated_completion_at: datetime | None = None
@@ -174,4 +173,6 @@ class JobStatusResponse(JobTiming):
 class GradingJob(JobTiming):
     job_id: str
     url: str
+    status: JobStatus
+    error: str | None = None
     created_at: datetime

@@ -1,4 +1,4 @@
-from datetime import datetime
+from typing import Literal
 from typing import cast as type_cast
 
 from sqlalchemy import Float, func, select, text
@@ -14,6 +14,8 @@ from gradeflow_backend.utils.datetime import utcnow
 
 from .base import BaseRepository
 
+TerminalJobStatus = Literal["completed", "failed"]
+
 
 class GradingJobRepository(BaseRepository):
     def __init__(self, session: Session) -> None:
@@ -21,7 +23,12 @@ class GradingJobRepository(BaseRepository):
         self._estimate_sample_size = get_settings().grading.completed_job_estimate_sample_size
 
     def create(self, assessment_id: str, job_type: JobType, job_id: str) -> GradingJobRecord:
-        record = GradingJobRecord(job_id=job_id, assessment_id=assessment_id, type=job_type)
+        record = GradingJobRecord(
+            job_id=job_id,
+            assessment_id=assessment_id,
+            type=job_type,
+            status="queued",
+        )
         self.session().add(record)
         self.session().flush()
         self.session().refresh(record)
@@ -49,16 +56,49 @@ class GradingJobRepository(BaseRepository):
         )
         return self.session().execute(stmt).scalars().first()
 
-    def mark_completed(
+    def mark_running(self, job_id: str) -> GradingJobRecord:
+        record = self.get(job_id)
+        if not record.is_finished and record.status != "running":
+            record.status = "running"
+            self.session().flush()
+        return record
+
+    def mark_completed(self, job_id: str) -> GradingJobRecord:
+        return self._mark_finished(
+            job_id,
+            status="completed",
+            error=None,
+        )
+
+    def mark_failed(
         self,
         job_id: str,
         *,
-        completed_at: datetime | None = None,
+        error: str | None = None,
+    ) -> GradingJobRecord:
+        return self._mark_finished(
+            job_id,
+            status="failed",
+            error=error,
+        )
+
+    def _mark_finished(
+        self,
+        job_id: str,
+        *,
+        status: TerminalJobStatus,
+        error: str | None,
     ) -> GradingJobRecord:
         record = self.get(job_id)
-        if record.completed_at is None:
-            record.completed_at = completed_at or utcnow()
-            self.session().flush()
+        if record.is_completed and status == "failed":
+            return record
+
+        if record.status != status or record.finished_at is None:
+            record.finished_at = utcnow()
+
+        record.status = status
+        record.error = error
+        self.session().flush()
         return record
 
     def estimate_duration_seconds(self, assessment_id: str, job_type: JobType) -> float | None:
@@ -78,7 +118,7 @@ class GradingJobRepository(BaseRepository):
                 ColumnElement[float],
                 (
                     (
-                        func.julianday(GradingJobRecord.completed_at)
+                        func.julianday(GradingJobRecord.finished_at)
                         - func.julianday(GradingJobRecord.created_at)
                     )
                     * 86400.0
@@ -90,14 +130,14 @@ class GradingJobRepository(BaseRepository):
                 func.timestampdiff(
                     text("SECOND"),
                     GradingJobRecord.created_at,
-                    GradingJobRecord.completed_at,
+                    GradingJobRecord.finished_at,
                 ).cast(Float),
             )
         return type_cast(
             ColumnElement[float],
             func.extract(
                 "epoch",
-                GradingJobRecord.completed_at - GradingJobRecord.created_at,
+                GradingJobRecord.finished_at - GradingJobRecord.created_at,
             ).cast(Float),
         )
 
@@ -110,13 +150,14 @@ class GradingJobRepository(BaseRepository):
         duration_seconds = self._duration_seconds_expression().label("duration_seconds")
         stmt = select(duration_seconds).where(
             GradingJobRecord.type == job_type,
-            GradingJobRecord.completed_at.is_not(None),
-            GradingJobRecord.completed_at >= GradingJobRecord.created_at,
+            GradingJobRecord.status == "completed",
+            GradingJobRecord.finished_at.is_not(None),
+            GradingJobRecord.finished_at >= GradingJobRecord.created_at,
         )
         if assessment_id is not None:
             stmt = stmt.where(GradingJobRecord.assessment_id == assessment_id)
         return stmt.order_by(
-            GradingJobRecord.completed_at.desc(),
+            GradingJobRecord.finished_at.desc(),
             GradingJobRecord.created_at.desc(),
         ).limit(self._estimate_sample_size)
 

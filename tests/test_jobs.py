@@ -130,6 +130,9 @@ def test_job_status_includes_failure_error(
 
     assert status.status == "failed"
     assert status.error == error_message
+    assert status.finished_at is not None
+    assert status.duration_seconds is not None
+    assert status.duration_seconds >= 0
 
 
 def test_job_submission_executor_failure_returns_structured_503(
@@ -177,8 +180,39 @@ def test_completed_job_status_survives_missing_executor(
 
     assert status.status == "completed"
     assert status.error is None
-    assert status.completed_at is not None
+    assert status.finished_at is not None
     assert status.duration_seconds is not None
+
+
+def test_failed_job_status_survives_missing_executor(
+    api: ApiClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    error_message = "Engine failed on q1"
+    executor = _FailingExecutor(error_message)
+    monkeypatch.setitem(
+        cast(dict[Any, Any], app.dependency_overrides), get_executor, lambda: executor
+    )
+
+    created = api.create_assessment("Persisted Failed Job")
+    api.set_question_set_yaml(created.id, QUESTION_SET_YAML)
+    api.set_rubric_yaml(created.id, RUBRIC_YAML)
+    api.set_submissions_csv(created.id, SUBMISSIONS_CSV)
+
+    job = api.run_grading_start(created.id)
+    first_status = api.get_job_status(job.job_id)
+    assert first_status.status == "failed"
+
+    monkeypatch.setitem(
+        cast(dict[Any, Any], app.dependency_overrides), get_executor, lambda: _MissingExecutor()
+    )
+
+    status = api.get_job_status(job.job_id)
+
+    assert status.status == "failed"
+    assert status.error == error_message
+    assert status.finished_at == first_status.finished_at
+    assert status.duration_seconds == first_status.duration_seconds
 
 
 def test_grading_job_spec_uses_parallel_grading_settings(

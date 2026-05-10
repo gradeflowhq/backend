@@ -225,7 +225,7 @@ class GradingService(BaseService):
             record,
             estimated_duration_seconds=self.grading_jobs.estimate_duration_seconds(
                 record.assessment_id,
-                type_cast(JobType, record.type),
+                record.type,
             ),
         )
 

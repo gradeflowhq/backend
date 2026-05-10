@@ -108,6 +108,15 @@ def sync_rubric(
     return svc.sync_stale_rules(assessment_id)
 
 
+@router.post("/repair", response_model=RubricResponse, status_code=status.HTTP_200_OK)
+def repair_rubric(
+    assessment_id: str,
+    svc: RubricService = Depends(get_rubric_service),
+    _u: str = Depends(role_guard_factory("editor")),
+) -> RubricResponse:
+    return svc.repair(assessment_id)
+
+
 @router.get("/overview", response_model=RubricOverviewResponse, status_code=status.HTTP_200_OK)
 def rubric_overview(
     assessment_id: str,

@@ -535,6 +535,12 @@ class ApiClient:
             headers=self._auth_header,
         )
 
+    def try_repair_rubric(self, assessment_id: str) -> Response:
+        return self.client.post(
+            f"/assessments/{assessment_id}/rubric/repair",
+            headers=self._auth_header,
+        )
+
     def try_get_rubric_overview(self, assessment_id: str) -> Response:
         return self.client.get(
             f"/assessments/{assessment_id}/rubric/overview",
@@ -579,6 +585,11 @@ class ApiClient:
 
     def sync_rubric(self, assessment_id: str) -> RubricResponse:
         r = self.try_sync_rubric(assessment_id=assessment_id)
+        assert r.status_code == 200, r.text
+        return RubricResponse.model_validate(r.json())
+
+    def repair_rubric(self, assessment_id: str) -> RubricResponse:
+        r = self.try_repair_rubric(assessment_id=assessment_id)
         assert r.status_code == 200, r.text
         return RubricResponse.model_validate(r.json())
 

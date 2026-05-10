@@ -9,7 +9,7 @@ from gradeflow_backend.utils.io import blob_from_str
 _YAML_BLOB_KWARGS = {"media_type": "application/yaml", "ext": "yaml"}
 
 
-def load_rubric(a: Assessment) -> Rubric:
+def load_rubric(a: Assessment, *, strict: bool = True) -> Rubric:
     """
     Load the persisted rubric for an assessment.
 
@@ -21,6 +21,7 @@ def load_rubric(a: Assessment) -> Rubric:
     return load_rubric_from_blob(
         blob_from_str(a.rubric_yaml, **_YAML_BLOB_KWARGS),
         serializer_name="yaml",
+        strict=strict,
     )
 
 

@@ -1,9 +1,9 @@
 import csv
 import io
+import logging
 from datetime import datetime
 
 import yaml
-from gradeflow_engine.exceptions import GradeFlowError
 
 from gradeflow_backend.models.assessment import Assessment
 from gradeflow_backend.repositories.assessments import AssessmentRepository
@@ -24,6 +24,8 @@ from gradeflow_backend.services.base import BaseService
 from gradeflow_backend.services.exceptions import NotFoundError
 from gradeflow_backend.utils.datetime import ensure_utc
 from gradeflow_backend.utils.loaders import load_question_set, load_rubric
+
+logger = logging.getLogger(__name__)
 
 
 def _effective_updated_at(a: Assessment) -> datetime:
@@ -62,16 +64,17 @@ def _compute_coverage(a: Assessment) -> AssessmentCoverage | None:
     if not a.rubric_yaml or not a.question_set_yaml:
         return None
     try:
-        rubric = load_rubric(a)
         question_set = load_question_set(a)
+        rubric = load_rubric(a, strict=False)
         cov = rubric.get_coverage(question_set)
         return AssessmentCoverage(
             total=cov.total,
             covered=cov.covered,
             percentage=cov.percentage,
         )
-    except Exception as e:
-        raise GradeFlowError(f"Failed to compute rubric coverage: {e}") from e
+    except Exception:
+        logger.warning("Failed to compute assessment rubric coverage", exc_info=True)
+        return None
 
 
 def _build_summary(a: Assessment, submission_repo: SubmissionRepository) -> AssessmentSummary:

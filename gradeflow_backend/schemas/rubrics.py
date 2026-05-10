@@ -77,3 +77,4 @@ class RubricOverviewResponse(BaseModel):
     coverage: RubricCoverage
     stale_rules: list[StaleRuleReference]
     status: SectionStatus
+    validation_errors: list[str] = Field(default_factory=list)

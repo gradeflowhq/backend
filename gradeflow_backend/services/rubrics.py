@@ -5,6 +5,7 @@ from gradeflow_engine.core import (
     load_rubric_from_blob,
     load_rubric_via_adapter,
 )
+from gradeflow_engine.exceptions import RubricValidationError as EngineRubricValidationError
 from gradeflow_engine.io.sources import DataSource
 from gradeflow_engine.rubrics.model import Rubric
 from gradeflow_engine.rules.models import QuestionRule
@@ -72,14 +73,14 @@ class RubricService(YamlArtifactService[Rubric, RubricResponse, ExportRubricResp
 
     def list_rules(self, assessment_id: str) -> RulesResponse:
         assessment = self._get_or_404(assessment_id)
-        rubric = self._load_stored_or_empty(assessment)
+        rubric = self._load_stored_or_empty(assessment, strict=False)
         return RulesResponse(
             rules=rubric.rules,
             status=rubric_status(assessment),
         )
 
     def get_rule(self, assessment_id: str, rule_id: str) -> QuestionRule:
-        rubric = self._load_stored(self._get_or_404(assessment_id))
+        rubric = self._load_stored(self._get_or_404(assessment_id), strict=False)
         index = self._rule_index(rule_id, rubric)
         return rubric.rules[index]
 
@@ -180,16 +181,29 @@ class RubricService(YamlArtifactService[Rubric, RubricResponse, ExportRubricResp
         question_set = load_question_set(assessment)
         return self._store_and_respond(assessment_id, rubric.remove_stale_rules(question_set))
 
+    def repair(self, assessment_id: str) -> RubricResponse:
+        assessment = self._get_or_404(assessment_id)
+        rubric = self._load_stored(assessment, strict=False)
+        return self._store_and_respond(assessment_id, rubric)
+
     def overview(self, assessment_id: str) -> RubricOverviewResponse:
         assessment = self._get_or_404(assessment_id)
-        rubric = self._load_stored(assessment)
+        if not assessment.rubric_yaml:
+            raise NotFoundError("Rubric not set")
         question_set = load_question_set(assessment)
+        try:
+            rubric = self._load_stored(assessment)
+            validation_errors: list[str] = []
+        except EngineRubricValidationError as e:
+            rubric = self._load_stored(assessment, strict=False)
+            validation_errors = e.messages
         return RubricOverviewResponse(
             question_rules=[rule for rule in rubric.rules if rule.scope == "question"],
             global_rules=[rule for rule in rubric.rules if rule.scope == "global"],
             coverage=rubric.get_coverage(question_set),
             stale_rules=rubric.get_stale_rule_references(question_set),
             status=rubric_status(assessment),
+            validation_errors=validation_errors,
         )
 
     # ------------------------------------------------------------------
@@ -222,13 +236,13 @@ class RubricService(YamlArtifactService[Rubric, RubricResponse, ExportRubricResp
             adapter_kwargs=adapter_kwargs,
         )
 
-    def _load_stored(self, assessment: Assessment) -> Rubric:
-        return load_rubric(assessment)
+    def _load_stored(self, assessment: Assessment, *, strict: bool = True) -> Rubric:
+        return load_rubric(assessment, strict=strict)
 
-    def _load_stored_or_empty(self, assessment: Assessment) -> Rubric:
+    def _load_stored_or_empty(self, assessment: Assessment, *, strict: bool = True) -> Rubric:
         if not assessment.rubric_yaml:
             return Rubric(rules=[])
-        return self._load_stored(assessment)
+        return self._load_stored(assessment, strict=strict)
 
     def _validate_or_raise(self, assessment: Assessment, rubric: Rubric) -> None:
         errors = rubric.validate_rubric(load_question_set(assessment))

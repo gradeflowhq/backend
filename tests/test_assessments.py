@@ -1,3 +1,6 @@
+from sqlalchemy.orm import Session
+
+from gradeflow_backend.repositories.assessments import AssessmentRepository
 from tests.helpers.api import ApiClient
 from tests.helpers.data import QUESTION_SET_YAML, RUBRIC_YAML, SUBMISSIONS_CSV
 
@@ -87,6 +90,39 @@ def test_assessment_list_summary_with_data(api: ApiClient) -> None:
     assert item.summary.coverage is not None
     assert item.summary.coverage.total == 4
     assert item.summary.coverage.covered == 4
+
+
+def test_assessment_list_summary_tolerates_invalid_stored_rubric_rule(
+    api: ApiClient,
+    test_session: Session,
+) -> None:
+    created = api.create_assessment("Summary With Broken Rule")
+    api.set_question_set_yaml(created.id, QUESTION_SET_YAML)
+
+    AssessmentRepository(test_session).set_rubric_yaml(
+        created.id,
+        """
+rules:
+  - id: valid-q1
+    type: TEXT_MATCH
+    question_id: q1
+    answers:
+      - Alice
+  - id: broken-q2
+    type: LENGTH
+    question_id: q2
+    min_length: not-a-number
+""",
+    )
+    test_session.commit()
+
+    lst = api.list_assessments()
+    item = next(a for a in lst.items if a.id == created.id)
+
+    assert item.summary is not None
+    assert item.summary.coverage is not None
+    assert item.summary.coverage.total == 4
+    assert item.summary.coverage.covered == 1
 
 
 def test_assessment_list_summary_graded_count(api: ApiClient) -> None:

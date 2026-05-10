@@ -1,5 +1,7 @@
 import yaml
+from sqlalchemy.orm import Session
 
+from gradeflow_backend.repositories.assessments import AssessmentRepository
 from tests.helpers.api import ApiClient
 from tests.helpers.data import QUESTION_SET_YAML, RUBRIC_YAML, SUBMISSIONS_CSV
 
@@ -481,6 +483,76 @@ rules:
         "global-q23": {"q2", "q3"},
     }
     assert set(coverage.uncovered_question_ids) == {"q4"}
+
+
+def test_rubric_overview_tolerates_invalid_stored_rule(
+    api: ApiClient,
+    test_session: Session,
+) -> None:
+    created = api.create_assessment("Rubric Overview With Broken Rule")
+    api.set_question_set_yaml(created.id, QUESTION_SET_YAML)
+
+    AssessmentRepository(test_session).set_rubric_yaml(
+        created.id,
+        """
+rules:
+  - id: valid-q1
+    type: TEXT_MATCH
+    question_id: q1
+    answers:
+      - Alice
+  - id: broken-q2
+    type: LENGTH
+    question_id: q2
+    min_length: not-a-number
+""",
+    )
+    test_session.commit()
+
+    overview = api.get_rubric_overview(created.id)
+
+    assert [rule.id for rule in overview.question_rules] == ["valid-q1"]
+    assert overview.global_rules == []
+    assert overview.coverage.question_rules == {"q1": "valid-q1"}
+    assert overview.coverage.total == 4
+    assert overview.coverage.covered == 1
+    assert overview.validation_errors == ["Rule 2 > Length > min length must be a whole number."]
+
+
+def test_repair_rubric_removes_invalid_stored_rules(
+    api: ApiClient,
+    test_session: Session,
+) -> None:
+    created = api.create_assessment("Repair Broken Rubric")
+    api.set_question_set_yaml(created.id, QUESTION_SET_YAML)
+
+    AssessmentRepository(test_session).set_rubric_yaml(
+        created.id,
+        """
+rules:
+  - id: valid-q1
+    type: TEXT_MATCH
+    question_id: q1
+    answers:
+      - Alice
+  - id: broken-q2
+    type: LENGTH
+    question_id: q2
+    min_length: not-a-number
+""",
+    )
+    test_session.commit()
+
+    repaired = api.repair_rubric(created.id)
+
+    assert [rule.id for rule in repaired.rubric.rules] == ["valid-q1"]
+
+    stored = api.get_rubric(created.id)
+    assert [rule.id for rule in stored.rubric.rules] == ["valid-q1"]
+
+    overview = api.get_rubric_overview(created.id)
+    assert [rule.id for rule in overview.question_rules] == ["valid-q1"]
+    assert overview.validation_errors == []
 
 
 def test_rubric_stale_rules_sync_removes_top_level_rules(api: ApiClient) -> None:

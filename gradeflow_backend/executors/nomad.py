@@ -62,6 +62,7 @@ def _build_nomad_job(
     callback_url: str,
     callback_secret: str,
     point_columns_json: str = "{}",
+    metadata_json: str = "{}",
 ) -> dict[str, Any]:
     s = get_settings().executor
     image = s.container_image or DEFAULT_IMAGE
@@ -84,6 +85,7 @@ def _build_nomad_job(
         timeout_s=s.timeout_s,
         callback_timeout_s=s.callback_timeout_s,
         point_columns_json=point_columns_json,
+        metadata_json=metadata_json,
         remove_adjustments=spec.remove_adjustments,
         override_results=spec.override_results,
         grade_questions_without_rule=spec.grade_questions_without_rule,
@@ -186,6 +188,7 @@ class NomadJobExecutor(GradingJobExecutor):
             callback_url=callback_url,
             callback_secret=callback_secret,
             point_columns_json=json.dumps(render_point_columns_map(spec)),
+            metadata_json=json.dumps(spec.metadata),
         )
 
         logger.info("Registering Nomad job", extra={"job_id": job_id})

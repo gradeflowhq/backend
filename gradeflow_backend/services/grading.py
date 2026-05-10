@@ -8,10 +8,12 @@ from gradeflow_engine.core import (
     dump_submissions_to_blob,
 )
 from gradeflow_engine.question_sets.model import QuestionSet
+from gradeflow_engine.questions.types import QuestionId
 from gradeflow_engine.rubrics.model import Rubric
 from gradeflow_engine.rules.models import QuestionRule
 from gradeflow_engine.rules.result import QuestionResult
 from gradeflow_engine.submissions.models import RawSubmission, Submission
+from natsort import natsorted
 
 from gradeflow_backend.config import get_settings
 from gradeflow_backend.models.assessment import Assessment
@@ -30,6 +32,8 @@ from gradeflow_backend.schemas.grading import (
     GradingJobSpec,
     GradingLimitConfig,
     GradingPreviewRequest,
+    GradingPreviewResponse,
+    GradingPreviewResult,
     GradingResponse,
     GradingRunRequest,
     JobType,
@@ -126,6 +130,10 @@ class GradingService(BaseService):
             )
 
         grading_settings = get_settings().grading
+        metadata: dict[str, Any] = {}
+        if type == "preview":
+            metadata["answer_question_ids"] = list(natsorted(rubric.get_referenced_question_ids()))
+            metadata["result_question_ids"] = list(natsorted(rubric.get_target_question_ids()))
 
         return jobs.submit(
             GradingJobSpec(
@@ -139,6 +147,7 @@ class GradingService(BaseService):
                 grade_questions_without_rule=grade_questions_without_rule,
                 rubric_grading_parallel_jobs=grading_settings.rubric_grading_parallel_jobs,
                 rubric_grading_parallel_mode=grading_settings.rubric_grading_parallel_mode,
+                metadata=metadata,
             ),
             request,
         )
@@ -316,14 +325,37 @@ class GradingService(BaseService):
             media_type=out.media_type,
         )
 
-    def get_preview(self, assessment_id: str) -> GradingResponse:
+    def get_preview(self, assessment_id: str) -> GradingPreviewResponse:
         a = self._get_or_404(assessment_id)
         yaml_str = self.repo.get_preview_yaml(assessment_id)
         if not yaml_str:
-            return GradingResponse(submissions=[], status=results_status(a))
-        items: list[dict[str, Any]] = yaml.safe_load(yaml_str) or []
+            return GradingPreviewResponse(submissions=[], status=results_status(a))
+        data: dict[str, Any] = yaml.safe_load(yaml_str) or {}
         self.repo.set_preview_yaml(assessment_id, None)
-        return GradingResponse(
+
+        preview_result = GradingPreviewResult.model_validate(data)
+        answer_question_ids = type_cast(
+            list[QuestionId], preview_result.metadata["answer_question_ids"]
+        )
+        result_question_ids = type_cast(
+            list[QuestionId], preview_result.metadata["result_question_ids"]
+        )
+        items: list[dict[str, Any]] = []
+        for submission in preview_result.submissions:
+            item = submission.model_dump()
+            answer_map = item["answer_map"]
+            result_map = item["result_map"]
+            item["answer_map"] = {
+                qid: answer_map[qid] for qid in answer_question_ids if qid in answer_map
+            }
+            item["result_map"] = {
+                qid: result_map[qid] for qid in result_question_ids if qid in result_map
+            }
+            items.append(item)
+
+        return GradingPreviewResponse(
             submissions=[AdjustableSubmission.model_validate(obj) for obj in items],
             status=results_status(a),
+            answer_question_ids=answer_question_ids,
+            result_question_ids=result_question_ids,
         )

@@ -10,7 +10,7 @@ from pathlib import Path
 import httpx
 from gradeflow_engine.rubrics.model import RubricGradingParallelMode
 from gradeflow_engine.submissions.models import Submission
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, JsonValue, TypeAdapter, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # ---------------------------------------------------------------------------
@@ -32,6 +32,7 @@ OUT_PATH_ENV = f"{_PREFIX}OUT_PATH"
 TIMEOUT_S_ENV = f"{_PREFIX}TIMEOUT_S"
 CALLBACK_TIMEOUT_S_ENV = f"{_PREFIX}CALLBACK_TIMEOUT_S"
 POINT_COLUMNS_JSON_ENV = f"{_PREFIX}POINT_COLUMNS_JSON"
+METADATA_JSON_ENV = f"{_PREFIX}METADATA_JSON"
 REMOVE_ADJUSTMENTS_ENV = f"{_PREFIX}REMOVE_ADJUSTMENTS"
 OVERRIDE_RESULTS_ENV = f"{_PREFIX}OVERRIDE_RESULTS"
 GRADE_QUESTIONS_WITHOUT_RULE_ENV = f"{_PREFIX}GRADE_QUESTIONS_WITHOUT_RULE"
@@ -39,6 +40,7 @@ RUBRIC_GRADING_PARALLEL_JOBS_ENV = f"{_PREFIX}RUBRIC_GRADING_PARALLEL_JOBS"
 RUBRIC_GRADING_PARALLEL_MODE_ENV = f"{_PREFIX}RUBRIC_GRADING_PARALLEL_MODE"
 
 CALLBACK_SIGNATURE_HEADER = "X-GradeFlow-Signature"
+_METADATA_ADAPTER = TypeAdapter(dict[str, JsonValue])
 
 
 # ---------------------------------------------------------------------------
@@ -79,6 +81,7 @@ class Config(BaseSettings):
     timeout_s: int = Field(default=300, ge=1, validation_alias=TIMEOUT_S_ENV)
     callback_timeout_s: int = Field(default=10, validation_alias=CALLBACK_TIMEOUT_S_ENV)
     point_columns_json: str = Field(default="{}", validation_alias=POINT_COLUMNS_JSON_ENV)
+    metadata_json: str = Field(default="{}", validation_alias=METADATA_JSON_ENV)
 
     remove_adjustments: bool = Field(default=False, validation_alias=REMOVE_ADJUSTMENTS_ENV)
     override_results: bool = Field(default=True, validation_alias=OVERRIDE_RESULTS_ENV)
@@ -111,6 +114,7 @@ class Payload(BaseModel):
     type: str
     submissions: list[Submission]
     remove_adjustments: bool = False
+    metadata: dict[str, JsonValue] = Field(default_factory=dict)
 
 
 def _run_engine_cli(
@@ -170,6 +174,10 @@ def _run_engine_cli(
         raise SystemExit(1)
 
 
+def _load_metadata(raw: str) -> dict[str, JsonValue]:
+    return _METADATA_ADAPTER.validate_json(raw)
+
+
 def main() -> int:
     try:
         cfg = Config()  # type: ignore[call-arg]
@@ -217,6 +225,7 @@ def main() -> int:
         type=cfg.job_type,
         submissions=items,
         remove_adjustments=cfg.remove_adjustments,
+        metadata=_load_metadata(cfg.metadata_json),
     )
 
     payload_bytes = _dump_callback_payload(payload)

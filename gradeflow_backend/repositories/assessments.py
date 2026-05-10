@@ -156,4 +156,10 @@ class AssessmentRepository(BaseRepository):
         client = self._require_valkey()
         key = self._preview_key(assessment_id)
         val = client.get(key)
-        return str(val) if val is not None else None
+        if val is None:
+            return None
+        if isinstance(val, bytes):
+            return val.decode("utf-8")
+        if isinstance(val, str):
+            return val
+        raise TypeError(f"Unexpected preview YAML value type: {type(val).__name__}")

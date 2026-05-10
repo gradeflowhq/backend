@@ -8,7 +8,7 @@ from gradeflow_engine.rules.models import QuestionRule
 from gradeflow_engine.rules.result import QuestionResult
 from gradeflow_engine.serializations.submissions import SubmissionsSerializerConfig
 from gradeflow_engine.submissions.models import RawSubmission, Submission
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, JsonValue
 
 from gradeflow_backend.config import get_settings
 from gradeflow_backend.schemas.status import SectionStatus
@@ -43,6 +43,18 @@ class GradingRunRequest(BaseModel):
 class GradingResponse(BaseModel):
     submissions: list[AdjustableSubmission]
     status: SectionStatus
+
+
+class GradingPreviewResult(BaseModel):
+    submissions: list[Submission]
+    metadata: dict[str, JsonValue] = Field(default_factory=dict)
+
+
+class GradingPreviewResponse(BaseModel):
+    submissions: list[AdjustableSubmission]
+    status: SectionStatus
+    answer_question_ids: list[QuestionId] = Field(default_factory=list)
+    result_question_ids: list[QuestionId] = Field(default_factory=list)
 
 
 class GradingDownloadRequest(BaseModel):
@@ -123,6 +135,7 @@ class GradingJobSpec(BaseModel):
     grade_questions_without_rule: bool = Field(default=True)
     rubric_grading_parallel_jobs: int = Field(default=1)
     rubric_grading_parallel_mode: RubricGradingParallelMode = Field(default="processes")
+    metadata: dict[str, JsonValue] = Field(default_factory=dict)
 
 
 class GradingJobResult(BaseModel):
@@ -134,6 +147,7 @@ class GradingJobResult(BaseModel):
         default=False,
         description="When True, clear all manual adjustments on re-graded submissions.",
     )
+    metadata: dict[str, JsonValue] = Field(default_factory=dict)
 
 
 class JobTiming(BaseModel):

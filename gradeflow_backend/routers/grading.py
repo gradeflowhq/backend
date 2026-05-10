@@ -14,6 +14,7 @@ from gradeflow_backend.schemas.grading import (
     GradingDownloadResponse,
     GradingJob,
     GradingPreviewRequest,
+    GradingPreviewResponse,
     GradingResponse,
     GradingRunRequest,
 )
@@ -121,12 +122,12 @@ def run_grading_preview(
     return svc.run_preview(assessment_id, req, request, jobs)
 
 
-@router.get("/preview", response_model=GradingResponse, status_code=status.HTTP_200_OK)
+@router.get("/preview", response_model=GradingPreviewResponse, status_code=status.HTTP_200_OK)
 def get_grading_preview(
     assessment_id: str,
     svc: GradingService = Depends(get_grading_service),
     _u: str = Depends(member_guard_factory()),
-) -> GradingResponse:
+) -> GradingPreviewResponse:
     return svc.get_preview(assessment_id)
 
 

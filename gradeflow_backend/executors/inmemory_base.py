@@ -245,6 +245,7 @@ class InMemoryBaseJobExecutor(GradingJobExecutor):
                 job_id=job.id,
                 job_type=spec.type,
                 point_columns_json=json.dumps(render_point_columns_map(spec)),
+                metadata_json=json.dumps(spec.metadata),
                 remove_adjustments=spec.remove_adjustments,
                 override_results=spec.override_results,
                 grade_questions_without_rule=spec.grade_questions_without_rule,
@@ -269,6 +270,7 @@ class InMemoryBaseJobExecutor(GradingJobExecutor):
         job_id: str,
         job_type: str,  # "run" | "preview"
         point_columns_json: str = "{}",
+        metadata_json: str = "{}",
         remove_adjustments: bool = False,
         override_results: bool = True,
         grade_questions_without_rule: bool = True,

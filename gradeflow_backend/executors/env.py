@@ -19,6 +19,7 @@ OUT_PATH_ENV: Final = f"{GRADEFLOW_ENV_PREFIX}OUT_PATH"
 TIMEOUT_S_ENV: Final = f"{GRADEFLOW_ENV_PREFIX}TIMEOUT_S"
 CALLBACK_TIMEOUT_S_ENV: Final = f"{GRADEFLOW_ENV_PREFIX}CALLBACK_TIMEOUT_S"
 POINT_COLUMNS_JSON_ENV: Final = f"{GRADEFLOW_ENV_PREFIX}POINT_COLUMNS_JSON"
+METADATA_JSON_ENV: Final = f"{GRADEFLOW_ENV_PREFIX}METADATA_JSON"
 REMOVE_ADJUSTMENTS_ENV: Final = f"{GRADEFLOW_ENV_PREFIX}REMOVE_ADJUSTMENTS"
 OVERRIDE_RESULTS_ENV: Final = f"{GRADEFLOW_ENV_PREFIX}OVERRIDE_RESULTS"
 GRADE_QUESTIONS_WITHOUT_RULE_ENV: Final = f"{GRADEFLOW_ENV_PREFIX}GRADE_QUESTIONS_WITHOUT_RULE"
@@ -42,6 +43,7 @@ def build_gradeflow_env(
     timeout_s: int,
     callback_timeout_s: int,
     point_columns_json: str = "{}",
+    metadata_json: str = "{}",
     remove_adjustments: bool = False,
     override_results: bool = True,
     grade_questions_without_rule: bool = True,
@@ -63,6 +65,7 @@ def build_gradeflow_env(
         TIMEOUT_S_ENV: str(timeout_s),
         CALLBACK_TIMEOUT_S_ENV: str(callback_timeout_s),
         POINT_COLUMNS_JSON_ENV: point_columns_json,
+        METADATA_JSON_ENV: metadata_json,
         REMOVE_ADJUSTMENTS_ENV: str(remove_adjustments).lower(),
         OVERRIDE_RESULTS_ENV: str(override_results).lower(),
         GRADE_QUESTIONS_WITHOUT_RULE_ENV: str(grade_questions_without_rule).lower(),

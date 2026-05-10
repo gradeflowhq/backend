@@ -60,6 +60,7 @@ class SynchronousJobExecutor(GradingJobExecutor):
                 type=spec.type,
                 submissions=submissions,
                 remove_adjustments=spec.remove_adjustments,
+                metadata=spec.metadata,
             )
 
             # Post callback

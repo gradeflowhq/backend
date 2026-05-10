@@ -15,6 +15,7 @@ from gradeflow_backend.executors.env import (
     GRADE_QUESTIONS_WITHOUT_RULE_ENV,
     JOB_ID_ENV,
     JOB_TYPE_ENV,
+    METADATA_JSON_ENV,
     OUT_PATH_ENV,
     OVERRIDE_RESULTS_ENV,
     POINT_COLUMNS_JSON_ENV,
@@ -46,6 +47,7 @@ def test_build_gradeflow_env_stringifies_contract_values() -> None:
         timeout_s=12,
         callback_timeout_s=34,
         point_columns_json='{"Q1":"points"}',
+        metadata_json='{"answer_question_ids":["Q1"]}',
         remove_adjustments=True,
         override_results=False,
         grade_questions_without_rule=False,
@@ -68,6 +70,7 @@ def test_build_gradeflow_env_stringifies_contract_values() -> None:
         TIMEOUT_S_ENV: "12",
         CALLBACK_TIMEOUT_S_ENV: "34",
         POINT_COLUMNS_JSON_ENV: '{"Q1":"points"}',
+        METADATA_JSON_ENV: '{"answer_question_ids":["Q1"]}',
         REMOVE_ADJUSTMENTS_ENV: "true",
         OVERRIDE_RESULTS_ENV: "false",
         GRADE_QUESTIONS_WITHOUT_RULE_ENV: "false",
@@ -94,6 +97,7 @@ def test_entrypoint_config_reads_explicit_gradeflow_aliases(
         timeout_s=300,
         callback_timeout_s=10,
         point_columns_json='{"Q2":"Adjusted"}',
+        metadata_json='{"source":"test"}',
         remove_adjustments=False,
         override_results=True,
         grade_questions_without_rule=True,
@@ -114,6 +118,7 @@ def test_entrypoint_config_reads_explicit_gradeflow_aliases(
     assert cfg.engine_bin == "custom-engine"
     assert cfg.workdir == Path("/workspace")
     assert cfg.point_columns_json == '{"Q2":"Adjusted"}'
+    assert cfg.metadata_json == '{"source":"test"}'
     assert cfg.remove_adjustments is False
     assert cfg.override_results is True
     assert cfg.grade_questions_without_rule is True
@@ -178,6 +183,7 @@ def test_entrypoint_main_reads_json_output_and_posts_callback(
         out_path=out_json,
         timeout_s=300,
         callback_timeout_s=10,
+        metadata_json='{"answer_question_ids":["q1"]}',
         rubric_grading_parallel_jobs=2,
         rubric_grading_parallel_mode="threads",
     )
@@ -221,3 +227,4 @@ def test_entrypoint_main_reads_json_output_and_posts_callback(
     assert captured["url"] == "https://example.test/callback"
     assert body["job_id"] == "job-a3-run"
     assert body["submissions"][0]["student_id"] == "s1"
+    assert body["metadata"] == {"answer_question_ids": ["q1"]}

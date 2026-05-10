@@ -17,6 +17,7 @@ from gradeflow_backend.schemas.grading import (
     GradingJob,
     GradingJobResult,
     GradingJobSpec,
+    GradingPreviewResult,
     JobStatusResponse,
     JobType,
 )
@@ -53,7 +54,10 @@ class JobsService:
 
     def _set_data(self, assessment_id: str, job_type: JobType, result: GradingJobResult) -> None:
         if job_type == "preview":
-            payload = [submission.model_dump() for submission in result.submissions]
+            payload = GradingPreviewResult(
+                submissions=result.submissions,
+                metadata=result.metadata,
+            ).model_dump(mode="json")
             yaml_str = yaml.safe_dump(payload)
             self.assessments.set_preview_yaml(assessment_id, yaml_str)
         else:

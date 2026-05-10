@@ -381,6 +381,80 @@ def test_preview_single_rule_filters_results_and_submissions(api: ApiClient) -> 
     assert s2.result_map["q1"].passed is False
 
 
+def test_preview_response_includes_referenced_answer_questions(api: ApiClient) -> None:
+    created = api.create_assessment("Preview Conditional Relevant Answers")
+    api.set_question_set_yaml(created.id, QUESTION_SET_YAML)
+    api.set_submissions_csv(created.id, SUBMISSIONS_CSV)
+
+    resp = api.preview_grading(
+        assessment_id=created.id,
+        rule={
+            "type": "CONDITIONAL",
+            "if_rules": [
+                {"type": "TEXT_MATCH", "question_id": "q1", "answers": ["Alice"]},
+            ],
+            "then_rules": [
+                {
+                    "type": "NUMERIC_RANGE",
+                    "question_id": "q2",
+                    "min_value": 0,
+                    "max_value": 100,
+                },
+            ],
+            "else_rules": [
+                {"type": "MULTIPLE_CHOICE", "question_id": "q3", "answer": ["B"]},
+            ],
+        },
+    )
+
+    assert resp.answer_question_ids == ["q1", "q2", "q3"]
+    assert resp.result_question_ids == ["q2", "q3"]
+    assert all(set(sub.answer_map).issubset(resp.answer_question_ids) for sub in resp.submissions)
+
+    s1 = next(gs for gs in resp.submissions if gs.student_id == "s1")
+    assert s1.answer_map["q1"] == "Alice"
+    assert s1.answer_map["q2"] == 90
+    assert set(s1.answer_map["q3"]) == {"A"}  # type: ignore[arg-type]
+    assert set(s1.result_map) == {"q2"}
+
+    s2 = next(gs for gs in resp.submissions if gs.student_id == "s2")
+    assert s2.answer_map["q1"] == "Bob"
+    assert s2.answer_map["q2"] == 76
+    assert set(s2.answer_map["q3"]) == {"B"}  # type: ignore[arg-type]
+    assert set(s2.result_map) == {"q3"}
+
+
+def test_preview_response_filters_passthrough_results_to_rubric_targets(
+    api: ApiClient,
+) -> None:
+    created = api.create_assessment("Preview Filters Passthrough Results")
+    api.set_question_set_yaml(created.id, QUESTION_SET_YAML)
+    api.set_rubric_yaml(
+        created.id,
+        """
+rules:
+  - type: TEXT_MATCH
+    question_id: q1
+    answers:
+      - "Alice"
+    max_points: 1.0
+""",
+    )
+    api.try_upload_source_data(
+        created.id,
+        "student_id,q1,q2,q3,q4,q4_points\ns1,Alice,90,A,1|a,2\ns2,Bob,76,B,2|b,1\n",
+    )
+    r = api.try_save_submission_config(created.id, {"point_columns": {"q4": "q4_points"}})
+    assert r.status_code == 200, r.text
+
+    resp = api.preview_grading(assessment_id=created.id)
+
+    assert resp.answer_question_ids == ["q1"]
+    assert resp.result_question_ids == ["q1"]
+    assert all(set(sub.answer_map) == {"q1"} for sub in resp.submissions)
+    assert all(set(sub.result_map) == {"q1"} for sub in resp.submissions)
+
+
 def test_preview_rule_validation_error_is_user_friendly(api: ApiClient) -> None:
     created = api.create_assessment("Friendly Preview Rule Validation")
 

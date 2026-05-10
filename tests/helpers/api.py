@@ -13,6 +13,7 @@ from gradeflow_backend.schemas.auth import MeResponse
 from gradeflow_backend.schemas.grading import (
     GradingDownloadResponse,
     GradingJob,
+    GradingPreviewResponse,
     GradingResponse,
     JobStatusResponse,
 )
@@ -884,13 +885,13 @@ class ApiClient:
         assert r.status_code == 200, r.text
         return GradingJob.model_validate(r.json())
 
-    def get_grading_preview(self, assessment_id: str) -> GradingResponse:
+    def get_grading_preview(self, assessment_id: str) -> GradingPreviewResponse:
         r = self.client.get(
             f"/assessments/{assessment_id}/grading/preview",
             headers=self._auth_header,
         )
         assert r.status_code == 200, r.text
-        return GradingResponse.model_validate(r.json())
+        return GradingPreviewResponse.model_validate(r.json())
 
     def preview_grading(
         self,
@@ -900,7 +901,7 @@ class ApiClient:
         limit: int | None = None,
         selection: str | None = None,
         seed: int | None = None,
-    ) -> GradingResponse:
+    ) -> GradingPreviewResponse:
         _ = self.preview_grading_start(
             assessment_id=assessment_id,
             rule=rule,

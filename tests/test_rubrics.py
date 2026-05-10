@@ -350,6 +350,35 @@ def test_rule_update_validates_prospective_rubric(api: ApiClient) -> None:
     assert getattr(unchanged[0], "question_id", None) == "q1"
 
 
+def test_rule_request_validation_error_is_user_friendly(api: ApiClient) -> None:
+    created = api.create_assessment("Friendly Rule Validation")
+    api.set_question_set_yaml(created.id, QUESTION_SET_YAML)
+    created_rule = api.create_rule(
+        created.id,
+        {"type": "LENGTH", "question_id": "q1", "min_length": 1},
+    ).rubric.rules[0]
+
+    invalid_rule: dict[str, object] = {
+        "type": "LENGTH",
+        "question_id": "q1",
+        "min_length": "bad",
+    }
+
+    responses = [
+        api.try_create_rule(created.id, invalid_rule),
+        api.try_update_rule(created.id, created_rule.id, {**invalid_rule, "id": created_rule.id}),
+    ]
+
+    for failed in responses:
+        assert failed.status_code == 422, failed.text
+        body = failed.json()
+        assert body["code"] == "VALIDATION_ERROR"
+        assert body["message"] == "Request validation failed"
+        assert body["errors"] == ["Rule > Length > min length must be a whole number."]
+        assert all("Input should be" not in error for error in body["errors"])
+        assert all("validation error for" not in error for error in body["errors"])
+
+
 def test_create_empty_rubric_creates_empty_rubric(api: ApiClient) -> None:
     created = api.create_assessment("Empty Rules")
 

@@ -1,17 +1,22 @@
 import logging
 from http import HTTPStatus
+from typing import cast
 
 from fastapi import FastAPI, Request, status
-from fastapi.exceptions import HTTPException, RequestValidationError
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from gradeflow_engine.error_formatting import format_validation_error_details
 from gradeflow_engine.exceptions import GradeFlowError, GradeFlowValidationError
 from pydantic import ValidationError
 from pydantic_core import ErrorDetails
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from gradeflow_backend.schemas.errors import ErrorResponse
 from gradeflow_backend.services.exceptions import AppError
 
 logger = logging.getLogger(__name__)
+
+_REQUEST_VALIDATION_LOCATION_PREFIXES = {"body", "query", "path", "header", "cookie"}
 
 
 def _error_response(
@@ -26,14 +31,15 @@ def _error_response(
     return JSONResponse(status_code=status_code, content=payload)
 
 
-def _validation_message(error: ErrorDetails) -> str:
-    msg = str(error.get("msg") or "Invalid value")
+def _strip_request_validation_location_prefix(error: ErrorDetails) -> ErrorDetails:
     loc = error.get("loc")
-    if isinstance(loc, tuple | list):
-        path = " > ".join(str(part) for part in loc if part not in {"body", "query", "path"})
-        if path:
-            return f"{path}: {msg}"
-    return msg
+    if (
+        not isinstance(loc, tuple | list)
+        or not loc
+        or loc[0] not in _REQUEST_VALIDATION_LOCATION_PREFIXES
+    ):
+        return error
+    return cast(ErrorDetails, {**error, "loc": tuple(loc[1:])})
 
 
 def _http_error_code(status_code: int) -> str:
@@ -68,7 +74,7 @@ def register_handlers(app: FastAPI) -> None:
         )
 
     async def http_exception_handler(_: Request, exc: Exception) -> JSONResponse:
-        assert isinstance(exc, HTTPException)
+        assert isinstance(exc, StarletteHTTPException)
         message = _http_message(exc.status_code, exc.detail)
         return _error_response(
             status_code=exc.status_code,
@@ -78,9 +84,12 @@ def register_handlers(app: FastAPI) -> None:
 
     async def request_validation_handler(_: Request, exc: Exception) -> JSONResponse:
         assert isinstance(exc, RequestValidationError)
-        messages = [_validation_message(e) for e in exc.errors()]
+        errors = cast(list[ErrorDetails], exc.errors())
+        messages = format_validation_error_details(
+            [_strip_request_validation_location_prefix(error) for error in errors]
+        )
         return _error_response(
-            status_code=422,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             code="VALIDATION_ERROR",
             message="Request validation failed",
             errors=messages,
@@ -88,9 +97,9 @@ def register_handlers(app: FastAPI) -> None:
 
     async def pydantic_validation_handler(_: Request, exc: Exception) -> JSONResponse:
         assert isinstance(exc, ValidationError)
-        messages = [_validation_message(e) for e in exc.errors()]
+        messages = format_validation_error_details(exc.errors())
         return _error_response(
-            status_code=422,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             code="VALIDATION_ERROR",
             message="Validation failed",
             errors=messages,
@@ -98,17 +107,16 @@ def register_handlers(app: FastAPI) -> None:
 
     async def gradeflow_validation_handler(_: Request, exc: Exception) -> JSONResponse:
         assert isinstance(exc, GradeFlowValidationError)
-        messages = [_validation_message(e) for e in exc.errors()]
         return _error_response(
-            status_code=422,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             code="GRADEFLOW_VALIDATION_ERROR",
-            message="GradeFlow validation failed",
-            errors=messages,
+            message=str(exc).splitlines()[0],
+            errors=exc.messages,
         )
 
     async def gradeflow_error_handler(_: Request, exc: Exception) -> JSONResponse:
         return _error_response(
-            status_code=422,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             code="GRADEFLOW_ERROR",
             message=str(exc),
         )
@@ -122,7 +130,7 @@ def register_handlers(app: FastAPI) -> None:
         )
 
     app.add_exception_handler(AppError, app_error_handler)
-    app.add_exception_handler(HTTPException, http_exception_handler)
+    app.add_exception_handler(StarletteHTTPException, http_exception_handler)
     app.add_exception_handler(RequestValidationError, request_validation_handler)
     app.add_exception_handler(ValidationError, pydantic_validation_handler)
     app.add_exception_handler(GradeFlowValidationError, gradeflow_validation_handler)

@@ -381,6 +381,23 @@ def test_preview_single_rule_filters_results_and_submissions(api: ApiClient) -> 
     assert s2.result_map["q1"].passed is False
 
 
+def test_preview_rule_validation_error_is_user_friendly(api: ApiClient) -> None:
+    created = api.create_assessment("Friendly Preview Rule Validation")
+
+    failed = api.try_preview_grading(
+        created.id,
+        rule={"type": "LENGTH", "question_id": "q1", "min_length": "bad"},
+    )
+
+    assert failed.status_code == 422, failed.text
+    body = failed.json()
+    assert body["code"] == "VALIDATION_ERROR"
+    assert body["message"] == "Request validation failed"
+    assert body["errors"] == ["Rule > Length > min length must be a whole number."]
+    assert all("Input should be" not in error for error in body["errors"])
+    assert all("validation error for" not in error for error in body["errors"])
+
+
 def test_preview_clears_existing_results(api: ApiClient) -> None:
     created = api.create_assessment("Preview Clears Existing Results")
     api.set_question_set_yaml(created.id, QUESTION_SET_YAML)

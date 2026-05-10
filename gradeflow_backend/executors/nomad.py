@@ -29,19 +29,24 @@ DEFAULT_GROUP_NAME = "gradeflow-group"
 DEFAULT_PREVIEW_RUN_PRIORITY = 50
 DEFAULT_GRADING_RUN_PRIORITY = 25
 DEFAULT_RESTART_POLICY: dict[str, str | int] = {
-    "attempts": 0,
-    "interval": 30_000_000_000,
-    "delay": 1_000_000_000,
-    "mode": "fail",
+    "Attempts": 0,
+    "Interval": 30_000_000_000,
+    "Delay": 1_000_000_000,
+    "Mode": "fail",
+}
+DEFAULT_RESCHEDULE_POLICY: dict[str, bool | int] = {
+    "Attempts": 0,
+    "Unlimited": False,
 }
 DEFAULT_LOG_CONFIG: dict[str, int] = {
-    "max_files": 5,
-    "max_file_size": 10_000_000,
+    "MaxFiles": 5,
+    "MaxFileSizeMB": 10,
 }
 DEFAULT_DATACENTERS = ["dc1"]
 DEFAULT_FILE_PERMS = "0644"
 DEFAULT_SCRIPT_PERMS = "0755"
 DEFAULT_DOCKER_DRIVER = "docker"
+TERMINATED_EVENT_TYPE = "Terminated"
 
 
 def _select_priority(job_type: str) -> int:
@@ -117,24 +122,29 @@ def _build_nomad_job(
     ]
 
     task: dict[str, Any] = {
-        "name": DEFAULT_TASK_NAME,
-        "driver": DEFAULT_DOCKER_DRIVER,
-        "config": {
+        "Name": DEFAULT_TASK_NAME,
+        "Driver": DEFAULT_DOCKER_DRIVER,
+        "Config": {
             "image": image,
             "entrypoint": ["python", f"{workdir}/entrypoint.py"],
             "work_dir": workdir,
         },
-        "env": env,
-        "templates": templates,
-        "resources": {
+        "Env": env,
+        "Templates": templates,
+        "Resources": {
             "CPU": s.nomad_cpu,
             "MemoryMB": s.nomad_memory_mb,
         },
-        "logs": DEFAULT_LOG_CONFIG,
-        "restart_policy": DEFAULT_RESTART_POLICY,
+        "LogConfig": DEFAULT_LOG_CONFIG,
+        "RestartPolicy": DEFAULT_RESTART_POLICY,
     }
 
-    group: dict[str, Any] = {"name": DEFAULT_GROUP_NAME, "count": 1, "tasks": [task]}
+    group: dict[str, Any] = {
+        "Name": DEFAULT_GROUP_NAME,
+        "Count": 1,
+        "Tasks": [task],
+        "ReschedulePolicy": DEFAULT_RESCHEDULE_POLICY,
+    }
 
     job: dict[str, Any] = {
         "Job": {
@@ -150,6 +160,28 @@ def _build_nomad_job(
         job["Job"]["Namespace"] = s.nomad_namespace
 
     return job
+
+
+def _latest_event_message(
+    events: list[dict[str, Any]],
+    *,
+    event_type: str | None = None,
+) -> str | None:
+    return next(
+        (
+            event["DisplayMessage"]
+            for event in reversed(events)
+            if (event_type is None or event["Type"] == event_type) and event["DisplayMessage"]
+        ),
+        None,
+    )
+
+
+def _task_failure_message(events: list[dict[str, Any]]) -> str | None:
+    return _latest_event_message(
+        events,
+        event_type=TERMINATED_EVENT_TYPE,
+    ) or _latest_event_message(events)
 
 
 class NomadJobExecutor(GradingJobExecutor):
@@ -241,15 +273,11 @@ class NomadJobExecutor(GradingJobExecutor):
                 continue
 
             task_states = cast(dict[str, Any], allocation.get("TaskStates") or {})
-            for task_name, task_state in task_states.items():
+            for _, task_state in task_states.items():
                 events = cast(list[dict[str, Any]], task_state.get("Events") or [])
-                for event in reversed(events):
-                    message = (
-                        event.get("DisplayMessage") or event.get("Message") or event.get("Type")
-                    )
-                    if message:
-                        messages.append(f"{task_name}: {message}")
-                        break
+                message = _task_failure_message(events)
+                if message:
+                    messages.append(message)
 
         if not messages:
             return None

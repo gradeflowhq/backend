@@ -67,10 +67,25 @@ class GradingService(BaseService):
         if errors:
             raise RubricValidationError(errors)
 
-    def _limit_raw_submissions(
+    @staticmethod
+    def _random_raw_submissions(
+        subs: list[RawSubmission],
+        *,
+        limit: int,
+        seed: int | None,
+    ) -> list[RawSubmission]:
+        rnd = random.Random(seed)
+        subs_copy = list(subs)
+        if limit >= len(subs_copy):
+            rnd.shuffle(subs_copy)
+            return subs_copy
+        return rnd.sample(subs_copy, k=limit)
+
+    def _select_raw_submissions(
         self,
         subs: list[RawSubmission],
         *,
+        rubric: Rubric,
         limit: int | None,
         selection: str,
         seed: int | None,
@@ -82,13 +97,23 @@ class GradingService(BaseService):
         if selection == "first":
             return sorted(subs, key=lambda s: s.student_id)[:limit]
         if selection == "random":
-            rnd = random.Random(seed)
-            subs_copy = list(subs)
-            if limit >= len(subs_copy):
-                rnd.shuffle(subs_copy)
-                return subs_copy
-            return rnd.sample(subs_copy, k=limit)
-        raise BadRequestError("selection must be 'first' or 'random'")
+            return self._random_raw_submissions(subs, limit=limit, seed=seed)
+        if selection == "random_unique":
+            question_ids = list(natsorted(rubric.get_referenced_question_ids()))
+            if not question_ids:
+                return self._random_raw_submissions(subs, limit=limit, seed=seed)
+
+            unique_subs_by_answer: dict[tuple[str, ...], RawSubmission] = {}
+            for sub in sorted(subs, key=lambda s: s.student_id):
+                answer_key = tuple(sub.raw_answer_map.get(qid, "") for qid in question_ids)
+                unique_subs_by_answer.setdefault(answer_key, sub)
+
+            return self._random_raw_submissions(
+                list(unique_subs_by_answer.values()),
+                limit=limit,
+                seed=seed,
+            )
+        raise BadRequestError("selection must be 'first', 'random', or 'random_unique'")
 
     def _grading_response(self, a: Assessment) -> GradingResponse:
         rows = self.submission_repo.list_by_assessment(a.id)
@@ -122,8 +147,9 @@ class GradingService(BaseService):
         self._validate_or_raise(rubric, qset)
 
         if config is not None:
-            raw_subs = self._limit_raw_submissions(
+            raw_subs = self._select_raw_submissions(
                 raw_subs,
+                rubric=rubric,
                 limit=config.limit,
                 selection=config.selection,
                 seed=config.seed,

@@ -9,6 +9,7 @@ from tests.helpers.api import ApiClient
 from tests.helpers.data import QUESTION_SET_YAML, RUBRIC_YAML, SUBMISSIONS_CSV
 
 T0 = datetime(2026, 1, 1, tzinfo=UTC)
+DUPLICATE_Q1_SUBMISSIONS_CSV = "student_id,q1\ns1,Alice\ns2,Alice\ns3,Bob\ns4,Bob\ns5,Clare\n"
 
 
 def _rule_exact_match_q1() -> dict[str, object]:
@@ -522,6 +523,54 @@ def test_preview_random_sampling_seed_reproducible(api: ApiClient) -> None:
 
     resp3 = api.preview_grading(assessment_id=created.id, limit=1, selection="random", seed=99)
     assert resp3.submissions[0].student_id != resp1.submissions[0].student_id
+
+
+def test_preview_random_unique_samples_unique_raw_answers(api: ApiClient) -> None:
+    created = api.create_assessment("Preview Random Unique")
+    api.set_question_set_yaml(created.id, QUESTION_SET_YAML)
+    api.set_submissions_csv(created.id, DUPLICATE_Q1_SUBMISSIONS_CSV)
+
+    resp = api.preview_grading(
+        assessment_id=created.id,
+        rule=_rule_exact_match_q1(),
+        limit=10,
+        selection="random_unique",
+        seed=42,
+    )
+
+    answers: list[str] = []
+    for sub in resp.submissions:
+        answer = sub.answer_map["q1"]
+        assert isinstance(answer, str)
+        answers.append(answer)
+
+    assert len(resp.submissions) == 3
+    assert sorted(answers) == ["Alice", "Bob", "Clare"]
+
+
+def test_preview_random_unique_sampling_seed_reproducible(api: ApiClient) -> None:
+    created = api.create_assessment("Preview Random Unique Seed")
+    api.set_question_set_yaml(created.id, QUESTION_SET_YAML)
+    api.set_submissions_csv(created.id, DUPLICATE_Q1_SUBMISSIONS_CSV)
+
+    resp1 = api.preview_grading(
+        assessment_id=created.id,
+        rule=_rule_exact_match_q1(),
+        limit=2,
+        selection="random_unique",
+        seed=42,
+    )
+    resp2 = api.preview_grading(
+        assessment_id=created.id,
+        rule=_rule_exact_match_q1(),
+        limit=2,
+        selection="random_unique",
+        seed=42,
+    )
+
+    assert [sub.student_id for sub in resp1.submissions] == [
+        sub.student_id for sub in resp2.submissions
+    ]
 
 
 def test_adjust_nonexistent_student_rejected(api: ApiClient) -> None:

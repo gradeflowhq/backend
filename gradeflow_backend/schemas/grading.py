@@ -96,13 +96,19 @@ class GradingLimitConfig(BaseModel):
         le=grading_settings.max_submission_preview,
         description="If provided, preview only this many submissions.",
     )
-    selection: Literal["first", "random"] = Field(
-        default="first",
-        description="How to select limited submissions: 'first' (deterministic) or 'random'.",
+    selection: Literal["first", "random", "random_unique"] = Field(
+        default="random_unique",
+        description=(
+            "How to select limited submissions: 'first' (deterministic), 'random', "
+            "or 'random_unique' (random unique answers)."
+        ),
     )
     seed: int | None = Field(
         default=None,
-        description="Random seed used when selection='random' for reproducibility.",
+        description=(
+            "Random seed used when selection='random' or selection='random_unique' "
+            "for reproducibility."
+        ),
     )
 
 

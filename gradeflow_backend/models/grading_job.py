@@ -20,6 +20,10 @@ class GradingJobRecord(Base):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     @property
+    def is_completed(self) -> bool:
+        return self.completed_at is not None
+
+    @property
     def duration(self) -> timedelta | None:
         if self.completed_at is None:
             return None

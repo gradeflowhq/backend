@@ -90,6 +90,26 @@ class _SubmitFailingExecutor(GradingJobExecutor):
         return
 
 
+class _MissingExecutor(GradingJobExecutor):
+    def submit(
+        self,
+        job_id: str,
+        spec: GradingJobSpec,
+        callback_url: str,
+        callback_secret: str,
+    ) -> None:
+        return
+
+    def get_status(self, job_id: str) -> JobStatus:
+        raise JobNotFoundError(f"Job not found: {job_id}")
+
+    def start(self) -> None:
+        return
+
+    def stop(self) -> None:
+        return
+
+
 def test_job_status_includes_failure_error(
     api: ApiClient,
     monkeypatch: pytest.MonkeyPatch,
@@ -136,6 +156,29 @@ def test_job_submission_executor_failure_returns_structured_503(
         "or failed to accept the job."
     )
     assert body["errors"] == [body["message"]]
+
+
+def test_completed_job_status_survives_missing_executor(
+    api: ApiClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    created = api.create_assessment("Persisted Completed Job")
+    api.set_question_set_yaml(created.id, QUESTION_SET_YAML)
+    api.set_rubric_yaml(created.id, RUBRIC_YAML)
+    api.set_submissions_csv(created.id, SUBMISSIONS_CSV)
+
+    job = api.run_grading_start(created.id)
+
+    monkeypatch.setitem(
+        cast(dict[Any, Any], app.dependency_overrides), get_executor, lambda: _MissingExecutor()
+    )
+
+    status = api.get_job_status(job.job_id)
+
+    assert status.status == "completed"
+    assert status.error is None
+    assert status.completed_at is not None
+    assert status.duration_seconds is not None
 
 
 def test_grading_job_spec_uses_parallel_grading_settings(

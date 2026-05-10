@@ -73,15 +73,14 @@ def build_job_timing(
     estimated_duration_seconds: float | None = None,
 ) -> JobTiming:
     estimated_completion_at = None
-    if record.completed_at is None and estimated_duration_seconds is not None:
+    if not record.is_completed and estimated_duration_seconds is not None:
         estimated_completion_at = ensure_utc(record.created_at) + timedelta(
             seconds=estimated_duration_seconds
         )
     return JobTiming(
+        is_completed=record.is_completed,
         completed_at=ensure_utc(record.completed_at) if record.completed_at else None,
         duration_seconds=record.duration_seconds,
-        estimated_duration_seconds=estimated_duration_seconds
-        if record.completed_at is None
-        else None,
+        estimated_duration_seconds=estimated_duration_seconds if not record.is_completed else None,
         estimated_completion_at=estimated_completion_at,
     )

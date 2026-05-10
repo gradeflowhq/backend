@@ -109,9 +109,9 @@ class JobsService:
             raise NotFoundError("Job not found") from e
 
         try:
-            status = self.executor.get_status(job_id)
+            status = "completed" if record.is_completed else self.executor.get_status(job_id)
             error = self.executor.get_error(job_id) if status == "failed" else None
-            if status == "completed":
+            if status == "completed" and not record.is_completed:
                 record = self.grading_jobs.mark_completed(job_id)
             return build_job_status_response(
                 record=record,

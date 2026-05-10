@@ -166,7 +166,7 @@ def test_rule_schema_injects_question_specific_data(api: ApiClient) -> None:
     text_body = text_match.json()
     assert text_body["schema"]["properties"]["answers"]["x-gradeflow"] == {
         "input": "string-list",
-        "suggestions": ["Alice", "Bob"],
+        "suggestions": {"Alice": 1, "Bob": 1},
     }
     assert "examples" not in text_body["schema"]["properties"]["answers"]
 
@@ -181,7 +181,7 @@ def test_rule_schema_injects_question_specific_data(api: ApiClient) -> None:
     assert number_answers_schema["items"]["type"] == "string"
     assert number_answers_schema["x-gradeflow"] == {
         "input": "string-list",
-        "suggestions": ["90", "76"],
+        "suggestions": {"90": 1, "76": 1},
     }
     assert "examples" not in number_answers_schema
 
@@ -198,7 +198,7 @@ def test_rule_schema_injects_question_specific_data(api: ApiClient) -> None:
     keyword_suggestions = keywords.json()["schema"]["properties"]["keywords"]["x-gradeflow"][
         "suggestions"
     ]
-    assert set(keyword_suggestions) == {"buy", "pay", "house"}
+    assert keyword_suggestions == {"buy": 1, "house": 2, "pay": 1}
 
     assumption_set = api.try_get_rule_schema(created.id, rule_type="ASSUMPTION_SET_MULTI")
     assert assumption_set.status_code == 200, assumption_set.text

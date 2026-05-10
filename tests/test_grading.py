@@ -259,12 +259,20 @@ def test_grading_job_estimate_prefers_same_assessment_type(
                 finished_at=T0 + timedelta(minutes=2, seconds=20),
             ),
             GradingJobRecord(
+                job_id="job-target-history-3-run",
+                assessment_id=target.id,
+                type="run",
+                status="completed",
+                created_at=T0 + timedelta(minutes=3),
+                finished_at=T0 + timedelta(minutes=3, seconds=40),
+            ),
+            GradingJobRecord(
                 job_id="job-target-failed-ignored-run",
                 assessment_id=target.id,
                 type="run",
                 status="failed",
-                created_at=T0 + timedelta(minutes=3),
-                finished_at=T0 + timedelta(minutes=3, seconds=1),
+                created_at=T0 + timedelta(minutes=4),
+                finished_at=T0 + timedelta(minutes=4, seconds=1),
                 error="Engine failed",
             ),
             GradingJobRecord(
@@ -280,8 +288,8 @@ def test_grading_job_estimate_prefers_same_assessment_type(
     job = api.get_grading_job(target.id)
 
     assert job.job_id == "job-target-latest-run"
-    assert job.estimated_duration_seconds == pytest.approx(15.0)
-    assert job.estimated_completion_at == latest_created_at + timedelta(seconds=15)
+    assert job.estimated_duration_seconds == pytest.approx(27.5)
+    assert job.estimated_completion_at == latest_created_at + timedelta(seconds=27.5)
 
 
 def test_grading_job_estimate_uses_recent_bounded_sample(

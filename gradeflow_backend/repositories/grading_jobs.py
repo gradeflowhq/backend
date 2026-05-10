@@ -1,11 +1,8 @@
-from typing import Literal
-from typing import cast as type_cast
+from typing import Literal, cast
 
-from sqlalchemy import Float, func, select, text
+from sqlalchemy import select
 from sqlalchemy.exc import NoResultFound
 from sqlalchemy.orm import Session
-from sqlalchemy.sql.elements import ColumnElement
-from sqlalchemy.sql.selectable import Select
 
 from gradeflow_backend.config import get_settings
 from gradeflow_backend.models.grading_job import GradingJobRecord
@@ -20,7 +17,9 @@ TerminalJobStatus = Literal["completed", "failed"]
 class GradingJobRepository(BaseRepository):
     def __init__(self, session: Session) -> None:
         super().__init__(session)
-        self._estimate_sample_size = get_settings().grading.completed_job_estimate_sample_size
+        grading_settings = get_settings().grading
+        self._estimate_sample_size = grading_settings.completed_job_estimate_sample_size
+        self._estimate_ewma_alpha = grading_settings.completed_job_estimate_ewma_alpha
 
     def create(self, assessment_id: str, job_type: JobType, job_id: str) -> GradingJobRecord:
         record = GradingJobRecord(
@@ -102,76 +101,45 @@ class GradingJobRepository(BaseRepository):
         return record
 
     def estimate_duration_seconds(self, assessment_id: str, job_type: JobType) -> float | None:
-        estimate = self._average_completed_duration_seconds(
+        estimate = self._ewma_completed_duration_seconds(
             job_type=job_type,
             assessment_id=assessment_id,
         )
         if estimate is not None:
             return estimate
 
-        return self._average_completed_duration_seconds(job_type=job_type)
+        return self._ewma_completed_duration_seconds(job_type=job_type)
 
-    def _duration_seconds_expression(self) -> ColumnElement[float]:
-        dialect_name = self.session().get_bind().dialect.name
-        if dialect_name == "sqlite":
-            return type_cast(
-                ColumnElement[float],
-                (
-                    (
-                        func.julianday(GradingJobRecord.finished_at)
-                        - func.julianday(GradingJobRecord.created_at)
-                    )
-                    * 86400.0
-                ).cast(Float),
-            )
-        if dialect_name in {"mysql", "mariadb"}:
-            return type_cast(
-                ColumnElement[float],
-                func.timestampdiff(
-                    text("SECOND"),
-                    GradingJobRecord.created_at,
-                    GradingJobRecord.finished_at,
-                ).cast(Float),
-            )
-        return type_cast(
-            ColumnElement[float],
-            func.extract(
-                "epoch",
-                GradingJobRecord.finished_at - GradingJobRecord.created_at,
-            ).cast(Float),
-        )
-
-    def _completed_duration_seconds_stmt(
-        self,
-        *,
-        job_type: JobType,
-        assessment_id: str | None = None,
-    ) -> Select[tuple[float]]:
-        duration_seconds = self._duration_seconds_expression().label("duration_seconds")
-        stmt = select(duration_seconds).where(
-            GradingJobRecord.type == job_type,
-            GradingJobRecord.status == "completed",
-            GradingJobRecord.finished_at.is_not(None),
-            GradingJobRecord.finished_at >= GradingJobRecord.created_at,
-        )
-        if assessment_id is not None:
-            stmt = stmt.where(GradingJobRecord.assessment_id == assessment_id)
-        return stmt.order_by(
-            GradingJobRecord.finished_at.desc(),
-            GradingJobRecord.created_at.desc(),
-        ).limit(self._estimate_sample_size)
-
-    def _average_completed_duration_seconds(
+    def _ewma_completed_duration_seconds(
         self,
         *,
         job_type: JobType,
         assessment_id: str | None = None,
     ) -> float | None:
-        recent_durations = self._completed_duration_seconds_stmt(
-            job_type=job_type,
-            assessment_id=assessment_id,
-        ).subquery()
-        stmt = select(func.avg(recent_durations.c.duration_seconds))
-        estimate = self.session().execute(stmt)
-        average = estimate.scalar_one()
-        return round(float(average), 3) if average is not None else None
+        stmt = select(GradingJobRecord).where(
+            GradingJobRecord.type == job_type,
+            GradingJobRecord.status == "completed",
+            GradingJobRecord.finished_at.is_not(None),
+        )
+        if assessment_id is not None:
+            stmt = stmt.where(GradingJobRecord.assessment_id == assessment_id)
+        stmt = stmt.order_by(
+            GradingJobRecord.finished_at.desc(),
+            GradingJobRecord.created_at.desc(),
+        ).limit(self._estimate_sample_size)
+
+        recent_durations = cast(
+            list[float],
+            [record.duration_seconds for record in self.session().execute(stmt).scalars()],
+        )
+        recent_durations.reverse()
+        if not recent_durations:
+            return None
+
+        estimate = recent_durations[0]
+        for duration_seconds in recent_durations[1:]:
+            estimate = (
+                self._estimate_ewma_alpha * duration_seconds
+                + (1 - self._estimate_ewma_alpha) * estimate
+            )
+        return round(estimate, 3)

@@ -116,7 +116,16 @@ class GradingSettings(BaseModel):
     completed_job_estimate_sample_size: int = Field(
         default=10,
         ge=1,
-        description="Number of recent completed grading jobs used to estimate job duration.",
+        description="Number of recent completed grading jobs included in job duration estimates.",
+    )
+    completed_job_estimate_ewma_alpha: float = Field(
+        default=0.5,
+        gt=0,
+        le=1,
+        description=(
+            "Smoothing factor for grading job duration EWMA estimates. Higher values weight "
+            "the most recent completed jobs more heavily."
+        ),
     )
     rubric_grading_parallel_jobs: int = Field(
         default=1,

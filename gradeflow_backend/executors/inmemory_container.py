@@ -12,10 +12,6 @@ from gradeflow_backend.executors.registry import register
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_RUNTIME = "docker"
-DEFAULT_IMAGE = "gradeflow-engine:latest"
-DEFAULT_WORKDIR = "/workspace"  # inside the container
-
 
 def _build_container_command(
     *,
@@ -46,13 +42,13 @@ class InMemoryContainerJobExecutor(InMemoryBaseJobExecutor):
     def __init__(
         self,
         *,
-        runtime: str = DEFAULT_RUNTIME,
-        image: str = DEFAULT_IMAGE,
-        container_workdir: str = DEFAULT_WORKDIR,
-        timeout_s: int = 300,
-        callback_timeout_s: int = 10,
-        poll_interval_s: float = 1.0,
-        num_workers: int = 4,
+        runtime: str,
+        image: str,
+        container_workdir: str,
+        timeout_s: int,
+        callback_timeout_s: int,
+        poll_interval_s: float,
+        num_workers: int,
     ) -> None:
         super().__init__(
             timeout_s=timeout_s,

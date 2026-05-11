@@ -53,7 +53,7 @@ Set `DATABASE__URL` to the SQLAlchemy connection string for your database:
 - `EXECUTOR__POLL_INTERVAL_S` — polling interval in seconds for in-memory executors (default: `1.0`)
 - `EXECUTOR__NUM_WORKERS` — worker count for in-memory executors (default: `4`)
 - `EXECUTOR__CONTAINER_RUNTIME` — `docker` (default) for container executor
-- `EXECUTOR__CONTAINER_IMAGE` — engine image (default: `ghcr.io/gradeflowhq/gradeflow-engine:latest`)
+- `EXECUTOR__CONTAINER_IMAGE` — GradeFlow engine image (default: `ghcr.io/gradeflowhq/gradeflow-engine:latest`)
 - `EXECUTOR__CONTAINER_WORKDIR` — working directory inside the container (default: `/local`)
 - `EXECUTOR__CALLBACK_BASE_URL` — absolute base URL for job callbacks (default: `http://host.docker.internal:8000`)
 - `EXECUTOR__CALLBACK_TIMEOUT_S` — timeout in seconds for callback POST requests (default: `10`)

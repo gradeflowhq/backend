@@ -44,8 +44,7 @@ rules:
 
 def test_build_nomad_job_uses_nomad_json_field_names() -> None:
     settings = get_settings().executor
-    image = settings.container_image or "gradeflow-engine:latest"
-    workdir = settings.container_workdir or "/workspace"
+    workdir = settings.container_workdir
     job = _build_nomad_job(
         "job-1-run",
         _make_spec(),
@@ -69,7 +68,7 @@ def test_build_nomad_job_uses_nomad_json_field_names() -> None:
     assert task["Name"] == "gradeflow"
     assert task["Driver"] == "docker"
     assert task["Config"] == {
-        "image": image,
+        "image": settings.container_image,
         "entrypoint": ["python", f"{workdir}/entrypoint.py"],
         "work_dir": workdir,
     }
@@ -92,6 +91,28 @@ def test_build_nomad_job_uses_nomad_json_field_names() -> None:
     }
     assert "restart_policy" not in task
     assert group["ReschedulePolicy"] == {"Attempts": 0, "Unlimited": False}
+
+
+def test_build_nomad_job_uses_container_image_setting() -> None:
+    settings = get_settings().executor
+    original_image = settings.container_image
+    settings.container_image = "registry.example.test/gradeflow-engine:test"
+    try:
+        job = _build_nomad_job(
+            "job-1-run",
+            _make_spec(),
+            submissions_csv="student_id,q1\ns1,Alice\n",
+            question_set_yaml="question_map: {}\n",
+            rubric_yaml="rules: []\n",
+            entrypoint_py="print('ok')\n",
+            callback_url="https://example.test/jobs/callback/token",
+            callback_secret="secret",
+        )
+    finally:
+        settings.container_image = original_image
+
+    task = job["Job"]["TaskGroups"][0]["Tasks"][0]
+    assert task["Config"]["image"] == "registry.example.test/gradeflow-engine:test"
 
 
 def test_nomad_error_uses_latest_terminated_event() -> None:

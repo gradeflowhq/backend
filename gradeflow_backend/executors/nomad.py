@@ -21,9 +21,6 @@ from gradeflow_backend.utils.renderers import (
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_WORKDIR = "/workspace"
-DEFAULT_IMAGE = "gradeflow-engine:latest"
-DEFAULT_ENGINE_BIN = "gradeflow-engine"
 DEFAULT_TASK_NAME = "gradeflow"
 DEFAULT_GROUP_NAME = "gradeflow-group"
 DEFAULT_PREVIEW_RUN_PRIORITY = 50
@@ -42,7 +39,6 @@ DEFAULT_LOG_CONFIG: dict[str, int] = {
     "MaxFiles": 5,
     "MaxFileSizeMB": 10,
 }
-DEFAULT_DATACENTERS = ["dc1"]
 DEFAULT_FILE_PERMS = "0644"
 DEFAULT_SCRIPT_PERMS = "0755"
 DEFAULT_DOCKER_DRIVER = "docker"
@@ -70,9 +66,7 @@ def _build_nomad_job(
     metadata_json: str = "{}",
 ) -> dict[str, Any]:
     s = get_settings().executor
-    image = s.container_image or DEFAULT_IMAGE
-    workdir = s.container_workdir or DEFAULT_WORKDIR
-    datacenters = s.nomad_datacenters or DEFAULT_DATACENTERS
+    workdir = s.container_workdir
     priority = _select_priority(spec.type)
 
     env = build_gradeflow_env(
@@ -81,7 +75,7 @@ def _build_nomad_job(
         job_type=spec.type,
         callback_url=callback_url,
         callback_secret=callback_secret,
-        engine_bin=s.engine_command or DEFAULT_ENGINE_BIN,
+        engine_bin=s.engine_command,
         workdir=workdir,
         submissions_path=f"{workdir}/submissions.csv",
         qset_path=f"{workdir}/question_set.yaml",
@@ -125,7 +119,7 @@ def _build_nomad_job(
         "Name": DEFAULT_TASK_NAME,
         "Driver": DEFAULT_DOCKER_DRIVER,
         "Config": {
-            "image": image,
+            "image": s.container_image,
             "entrypoint": ["python", f"{workdir}/entrypoint.py"],
             "work_dir": workdir,
         },
@@ -152,7 +146,7 @@ def _build_nomad_job(
             "Name": job_id,
             "Type": "batch",
             "Priority": priority,
-            "Datacenters": datacenters,
+            "Datacenters": s.nomad_datacenters,
             "TaskGroups": [group],
         }
     }
@@ -187,7 +181,7 @@ def _task_failure_message(events: list[dict[str, Any]]) -> str | None:
 class NomadJobExecutor(GradingJobExecutor):
     def __init__(self) -> None:
         s = get_settings().executor
-        host = s.nomad_host or "127.0.0.1"
+        host = s.nomad_host
         port = s.nomad_port
         token = s.nomad_token or None
         namespace = s.nomad_namespace or None

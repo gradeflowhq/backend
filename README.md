@@ -1,351 +1,436 @@
 # GradeFlow Backend
 
-A FastAPI backend that wraps the GradeFlow Engine to manage assessments, question sets, rubrics, rules, submissions, and grading. It uses Zitadel as an external identity provider for authentication, with role-based membership and typed request/response models.
+GradeFlow Backend is a FastAPI service for managing assessments around the
+GradeFlow Engine. It owns authentication, membership, persistence, source CSV
+state, async grading jobs, manual adjustments, and API-friendly wrappers around
+engine models. The engine remains the source of truth for question models,
+rubric rules, adapters, serializers, validation, inference, and grading.
 
-This is intended as a thin layer around the GradeFlow Engine.
+## What It Does
 
-## Getting Started
+- Authenticates Zitadel-issued JWTs and syncs users into the local database.
+- Stores assessments, metadata, members, source CSV data, import config,
+  question sets, rubrics, grading jobs, and grading results.
+- Imports, exports, infers, syncs, and edits GradeFlow Engine `QuestionSet`
+  objects.
+- Imports, exports, validates, repairs, and edits GradeFlow Engine `Rubric`
+  objects and individual rules.
+- Runs grading and preview jobs through a pluggable executor.
+- Tracks staleness across source data, question sets, rubrics, and results.
+- Caches preview results in Valkey and persists full grading results in SQL.
 
-### Installation
+## Installation
 
 ```bash
 pip install -e ".[dev]"
 ```
 
-For PostgreSQL support:
+Install the database driver that matches `DATABASE__URL`:
+
 ```bash
 pip install -e ".[postgresql]"
-```
-
-For MySQL / MariaDB support:
-```bash
 pip install -e ".[mysql]"
 ```
 
-### Configuration
+The MySQL extra also covers MariaDB.
 
-Settings are loaded from environment variables (or an optional `.env` file) using [pydantic-settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/) with `env_nested_delimiter='__'`. Nested fields are addressed with `__`, e.g. `ZITADEL__AUTHORITY` sets `settings.zitadel.authority`.
+## Configuration
 
-**Zitadel (Identity Provider)** (`ZITADEL__*`)
-- `ZITADEL__AUTHORITY` — Zitadel instance URL (default: `https://zitadel.cloud`)
-- `ZITADEL__CLIENT_ID` — OAuth2 Client ID from Zitadel (required)
-- `ZITADEL__AUDIENCE` — Expected JWT audience (aud) claim; typically the Zitadel Project Resource ID. Falls back to `CLIENT_ID` when empty.
-- `ZITADEL__ORG_DOMAIN` — Primary org domain — scopes login so users type username only (optional)
-- `ZITADEL__JWKS_CACHE_TTL` — JWKS cache lifetime in seconds (default: `300`). Zitadel rotates keys without notice, so the cache is refreshed periodically and on-demand when an unknown `kid` is encountered.
+Settings are loaded with `pydantic-settings` from environment variables or a
+local `.env` file. Nested settings use `__`, so `ZITADEL__AUTHORITY` sets
+`settings.zitadel.authority`.
 
-**Database** (`DATABASE__*`)
+Example values live in `.env.example`.
 
-Set `DATABASE__URL` to the SQLAlchemy connection string for your database:
-- SQLite file (default): `sqlite+pysqlite:///./gradeflow_backend.db`
-- SQLite in-memory: `sqlite+pysqlite://`
-- PostgreSQL (requires `[postgresql]` extra): `postgresql+psycopg2://user:pass@host:5432/dbname`
-- MySQL (requires `[mysql]` extra): `mysql+pymysql://user:pass@host:3306/dbname`
-- MariaDB (requires `[mysql]` extra): `mariadb+pymysql://user:pass@host:3306/dbname`
+### Zitadel
 
-**Valkey (preview cache)** (`VALKEY__*`)
-- `VALKEY__URL` — default: `valkey://gradeflow-valkey:6379/0`
-- `VALKEY__PREVIEW_TTL_S` — TTL in seconds for cached preview results (default: `300`)
+`ZITADEL__CLIENT_ID` is required at startup.
 
-**Executor** (`EXECUTOR__*`)
-- `EXECUTOR__EXECUTOR` — `NOMAD` (default) | `INMEMORY_CONTAINER` | `INMEMORY_SUBPROCESS` | `SYNCHRONOUS`
-- `EXECUTOR__ENGINE_COMMAND` — gradeflow-engine command (default: `gradeflow-engine`)
-- `EXECUTOR__TIMEOUT_S` — job timeout in seconds (default: `300`)
-- `EXECUTOR__POLL_INTERVAL_S` — polling interval in seconds for in-memory executors (default: `1.0`)
-- `EXECUTOR__NUM_WORKERS` — worker count for in-memory executors (default: `4`)
-- `EXECUTOR__CONTAINER_RUNTIME` — `docker` (default) for container executor
-- `EXECUTOR__CONTAINER_IMAGE` — GradeFlow engine image (default: `ghcr.io/gradeflowhq/gradeflow-engine:latest`)
-- `EXECUTOR__CONTAINER_WORKDIR` — working directory inside the container (default: `/local`)
-- `EXECUTOR__CALLBACK_BASE_URL` — absolute base URL for job callbacks (default: `http://host.docker.internal:8000`)
-- `EXECUTOR__CALLBACK_TIMEOUT_S` — timeout in seconds for callback POST requests (default: `10`)
-- `EXECUTOR__NOMAD_HOST` — Nomad HTTP host (default: `host.docker.internal`)
-- `EXECUTOR__NOMAD_PORT` — Nomad HTTP port (default: `4646`)
-- `EXECUTOR__NOMAD_TOKEN` — Nomad ACL token (optional)
-- `EXECUTOR__NOMAD_NAMESPACE` — Nomad namespace (optional)
-- `EXECUTOR__NOMAD_VERIFY_TLS` — verify TLS when talking to Nomad (default: `true`)
-- `EXECUTOR__NOMAD_DATACENTERS` — comma-separated list (default: `dc1`)
-- `EXECUTOR__NOMAD_CPU` — Nomad task CPU MHz (default: `200`)
-- `EXECUTOR__NOMAD_MEMORY_MB` — Nomad task memory MB (default: `512`)
+| Variable | Default | Notes |
+|---|---:|---|
+| `ZITADEL__AUTHORITY` | `https://zitadel.cloud` | Issuer URL. Set this to your actual Zitadel instance in production. |
+| `ZITADEL__CLIENT_ID` | empty | OAuth2 client ID. Also used as the default expected audience. |
+| `ZITADEL__AUDIENCE` | empty | Expected JWT `aud`; commonly a Zitadel Project Resource ID. |
+| `ZITADEL__ORG_DOMAIN` | empty | Adds `org_domain` to the authorization URL. |
+| `ZITADEL__JWKS_CACHE_TTL` | `300` | JWKS cache TTL in seconds. |
 
-**Grading** (`GRADING__*`)
-- `GRADING__MAX_SUBMISSION_PREVIEW` — maximum submissions allowed in a preview run (default: `20`)
-- `GRADING__RUN_REQUESTS_PER_MINUTE` — maximum grading-run requests allowed per client per minute (default: `10`)
-- `GRADING__PREVIEW_REQUESTS_PER_MINUTE` — maximum grading-preview requests allowed per client per minute (default: `30`)
-- `GRADING__COMPLETED_JOB_ESTIMATE_SAMPLE_SIZE` — recent completed jobs used for duration estimates (default: `10`)
-- `GRADING__RUBRIC_GRADING_PARALLEL_JOBS` — worker count for rubric grading; `-1` uses all CPUs available to the process, capped by submission count; `0` is invalid (default: `1`)
-- `GRADING__RUBRIC_GRADING_PARALLEL_MODE` — rubric grading worker mode: `processes` or `threads` (default: `processes`)
+### Database
 
-Example `.env` can be found in `.env.example`.
+Set `DATABASE__URL` to a SQLAlchemy URL:
 
-### Database Migrations
+```text
+sqlite+pysqlite:///./gradeflow_backend.db
+sqlite+pysqlite://
+postgresql+psycopg2://user:pass@host:5432/dbname
+mysql+pymysql://user:pass@host:3306/dbname
+mariadb+pymysql://user:pass@host:3306/dbname
+```
 
-The backend uses [Alembic](https://alembic.sqlalchemy.org/) for database schema migrations. After installation, run:
+SQLite is useful for local development. Use Alembic migrations for shared or
+production databases.
+
+### CORS
+
+| Variable | Default |
+|---|---|
+| `CORS__ALLOW_ORIGINS` | `["http://localhost:5173", "http://127.0.0.1:5173"]` |
+| `CORS__ALLOW_CREDENTIALS` | `true` |
+| `CORS__ALLOW_METHODS` | `["*"]` |
+| `CORS__ALLOW_HEADERS` | `["*"]` |
+
+### Valkey
+
+| Variable | Default | Notes |
+|---|---:|---|
+| `VALKEY__URL` | `valkey://gradeflow-valkey:6379/0` | Used for preview result cache and rate limiting. |
+| `VALKEY__PREVIEW_TTL_S` | `300` | Preview cache TTL in seconds. |
+
+### Executor
+
+`EXECUTOR__EXECUTOR` selects the job backend:
+
+- `NOMAD` (default)
+- `INMEMORY_CONTAINER`
+- `INMEMORY_SUBPROCESS`
+- `SYNCHRONOUS`
+
+Common settings:
+
+| Variable | Default |
+|---|---:|
+| `EXECUTOR__ENGINE_COMMAND` | `gradeflow-engine` |
+| `EXECUTOR__TIMEOUT_S` | `300` |
+| `EXECUTOR__POLL_INTERVAL_S` | `1.0` |
+| `EXECUTOR__NUM_WORKERS` | `4` |
+| `EXECUTOR__CALLBACK_BASE_URL` | `http://host.docker.internal:8000` |
+| `EXECUTOR__CALLBACK_TIMEOUT_S` | `10` |
+
+Container settings:
+
+| Variable | Default |
+|---|---:|
+| `EXECUTOR__CONTAINER_RUNTIME` | `docker` |
+| `EXECUTOR__CONTAINER_IMAGE` | `ghcr.io/gradeflowhq/gradeflow-engine:latest` |
+| `EXECUTOR__CONTAINER_WORKDIR` | `/local` |
+
+Nomad settings:
+
+| Variable | Default |
+|---|---:|
+| `EXECUTOR__NOMAD_HOST` | `host.docker.internal` |
+| `EXECUTOR__NOMAD_PORT` | `4646` |
+| `EXECUTOR__NOMAD_TOKEN` | empty |
+| `EXECUTOR__NOMAD_NAMESPACE` | empty |
+| `EXECUTOR__NOMAD_VERIFY_TLS` | `true` |
+| `EXECUTOR__NOMAD_DATACENTERS` | `["dc1"]` |
+| `EXECUTOR__NOMAD_CPU` | `200` |
+| `EXECUTOR__NOMAD_MEMORY_MB` | `512` |
+
+External executors receive a signed one-time callback URL. The callback endpoint
+validates both the token and `X-GradeFlow-Signature`.
+
+### Grading
+
+| Variable | Default | Notes |
+|---|---:|---|
+| `GRADING__MAX_SUBMISSION_PREVIEW` | `20` | Upper bound for preview limits. |
+| `GRADING__RUN_REQUESTS_PER_MINUTE` | `10` | Per-client rate limit. |
+| `GRADING__PREVIEW_REQUESTS_PER_MINUTE` | `30` | Per-client rate limit. |
+| `GRADING__COMPLETED_JOB_ESTIMATE_SAMPLE_SIZE` | `10` | Recent completed jobs used for estimates. |
+| `GRADING__COMPLETED_JOB_ESTIMATE_EWMA_ALPHA` | `0.5` | EWMA smoothing factor for estimates. |
+| `GRADING__RUBRIC_GRADING_PARALLEL_JOBS` | `1` | Use `-1` for all available CPUs; `0` is invalid. |
+| `GRADING__RUBRIC_GRADING_PARALLEL_MODE` | `processes` | `processes` or `threads`. |
+
+## Database Migrations
+
+Run migrations before serving a shared database:
 
 ```bash
 alembic upgrade head
 ```
 
-This applies all pending migrations. When developing locally with SQLite, the app also calls `init_db()` on startup to create tables, but for production databases (PostgreSQL, MySQL/MariaDB) you should always use Alembic.
-
-To generate a new migration after model changes:
+Create a migration after model changes:
 
 ```bash
-alembic revision --autogenerate -m "description of change"
+alembic revision --autogenerate -m "describe change"
 ```
 
-### Run the App
+The app also calls `init_db()` on startup, which is convenient for local SQLite
+development. Production deployments should still rely on Alembic. The Docker
+entrypoint runs `alembic upgrade head` before starting Uvicorn.
+
+## Running Locally
 
 ```bash
 uvicorn gradeflow_backend.main:app --reload
 ```
-- Docs: http://127.0.0.1:8000/docs
-- Health: GET /health -> `{"status": "ok"}`
 
-### Using Containers
+- OpenAPI docs: http://127.0.0.1:8000/docs
+- Health check: `GET /health` returns `{"status": "ok"}`
 
-Setup network
-```
+## Running With Containers
+
+```bash
 docker network create gradeflow
+
+docker run --name gradeflow-valkey --network gradeflow \
+  -d valkey/valkey
+
+docker run --name gradeflow-mariadb --network gradeflow \
+  --env MARIADB_USER=mariadb \
+  --env MARIADB_PASSWORD=my-secret-pw \
+  --env MARIADB_DATABASE=gradeflow \
+  --env MARIADB_ROOT_PASSWORD=my-secret-pw \
+  -d mariadb:latest
+
+docker run --name gradeflow-backend --network gradeflow \
+  --env-file .env \
+  -p 8000:8000 \
+  -d ghcr.io/gradeflowhq/gradeflow-backend:latest
 ```
 
-Run Valkey
-```
-docker run --name gradeflow-valkey --network gradeflow -d valkey/valkey
-```
+For Nomad or container executors, make sure `EXECUTOR__CALLBACK_BASE_URL` is an
+absolute URL that the grading runtime can reach.
 
-Run MariaDB
-```
-docker run --name gradeflow-mariadb --network gradeflow --env MARIADB_USER=mariadb --env MARIADB_PASSWORD=my-secret-pw --env MARIADB_DATABASE=gradeflow --env MARIADB_ROOT_PASSWORD=my-secret-pw -d mariadb:latest
-```
+## Authentication And Roles
 
-Run backend
-```
-docker run --name gradeflow-backend --network gradeflow --env-file .env -p 8000:8000 -d ghcr.io/gradeflowhq/gradeflow-backend:latest
-```
+The backend validates Zitadel access tokens locally with RS256 and JWKS. On first
+authenticated access it creates or links a local user record using the Zitadel
+subject, email, and name. If the token does not include email/name claims, the
+backend calls Zitadel's userinfo endpoint.
 
-## Authentication
+Use bearer tokens:
 
-Authentication is handled by [Zitadel](https://zitadel.com), an external identity provider. The backend validates Zitadel-issued JWTs (RS256) via JWKS and syncs user info to the local database on first access.
-
-- Me: GET /users/me (requires access token) — returns synced user info from DB
-
-Access tokens are obtained from Zitadel and used in the Authorization header:
-```
+```http
 Authorization: Bearer <access_token>
 ```
 
-User records are automatically created/updated in the local database when a valid Zitadel token is first seen (email and name synced from token claims or the userinfo endpoint).
+Assessment membership is role based:
 
-## Roles and Access Control
+| Role | Access |
+|---|---|
+| `viewer` | Read assessment data and run grading previews. |
+| `editor` | Modify source data, question sets, rubrics, rules, and grading state. |
+| `owner` | Full control, including assessment updates/deletes and member management. |
 
-Membership is tied to assessments with roles:
-- viewer: can read assessment data
-- editor: can modify question sets, rubrics, submissions, and grading state
-- owner: full control, including updating/deleting assessments and managing members
+## Engine Integration
 
-Route guards:
-- `member_guard_factory()`: requires membership
-- `role_guard_factory("editor" | "owner")`: requires minimum role
+The backend delegates core grading semantics to GradeFlow Engine:
+
+- Question types: `TEXT`, `NUMERIC`, `CHOICE`, `MULTI_VALUED`.
+- Built-in raw submission adapter: `csv`.
+- Built-in question set and rubric adapter: `examplify`.
+- Built-in question set/rubric serializer: `yaml`.
+- Built-in graded submission serializers: `csv`, `json`, `yaml`.
+- Rule families include text, numeric, choice, composite, multi-valued, custom
+  code, code tests, conditional, assumption set, and bonus rules.
+
+Rule schema endpoints build an engine `RuleContext` and return contextual JSON
+Schema plus `initial_value`. Schemas may include engine metadata under
+`x-gradeflow`, such as `input` hints (`code`, `string-list`, `rule`,
+`rule-list`) and answer suggestions derived from stored submissions.
+
+## Staleness And Status
+
+Assessments track these timestamps independently:
+
+- `source_updated_at`
+- `question_set_updated_at`
+- `rubric_updated_at`
+- `results_updated_at`
+
+Responses for question sets, rubrics, and grading include a `SectionStatus`
+with `updated_at` and `is_stale`. Staleness cascades downstream:
+
+- Source changes make the question set stale.
+- A stale or newer question set makes the rubric stale.
+- A stale or newer rubric makes grading results stale.
+
+Question-set status also reports drift against current source data: missing
+question IDs, extra question IDs, and newly observed choice options. Question-set
+sync can add missing questions, remove extra questions, and expand choice
+options from submissions. Rubric overview reports coverage, validation errors,
+and stale rule references; rubric sync removes rules that reference deleted
+questions, while repair reloads the stored rubric non-strictly and drops invalid
+rules.
 
 ## API Overview
 
-- Health
-  - GET /health
+### Health And Registry
 
-- Registry (GradeFlow Engine capabilities)
-  - GET /registry/adapters/raw-submissions
-  - GET /registry/adapters/question-sets
-  - GET /registry/adapters/rubrics
-  - GET /registry/serializers/question-sets
-  - GET /registry/serializers/rubrics
-  - GET /registry/serializers/submissions
+- `GET /health`
+- `GET /registry/adapters/raw-submissions`
+- `GET /registry/adapters/question-sets`
+- `GET /registry/adapters/rubrics`
+- `GET /registry/serializers/question-sets`
+- `GET /registry/serializers/rubrics`
+- `GET /registry/serializers/submissions`
 
-- Users
-  - GET /users/me -> MeResponse (synced from Zitadel token)
+### Users
 
-- Assessments (requires access token)
-  - POST /assessments -> create (creator becomes owner)
-  - GET /assessments -> list
-  - GET /assessments/{id} -> get (member)
-  - PATCH /assessments/{id} -> update (owner)
-  - DELETE /assessments/{id} -> delete (owner)
+- `GET /users/me` - current synced user.
 
-- Memberships (assessment-level)
-  - GET /assessments/{id}/members -> list (member)
-  - POST /assessments/{id}/members -> add member (owner) [role defaults to viewer]
-  - PATCH /assessments/{id}/members/{user_id} -> set role (owner)
-  - DELETE /assessments/{id}/members/{user_id} -> remove (owner)
+### Assessments
 
-- Question Sets
-  - GET /assessments/{id}/question-set -> get (member)
-  - POST /assessments/{id}/question-set/export -> export (member)
-  - PUT /assessments/{id}/question-set -> set by model (editor)
-  - PUT /assessments/{id}/question-set/upload -> set by raw data (editor)
-  - PUT /assessments/{id}/question-set/import -> import via adapter (editor)
-  - POST /assessments/{id}/question-set/infer -> infer from submissions (editor)
-  - POST /assessments/{id}/question-set/parse -> parse submissions (member)
-  - DELETE /assessments/{id}/question-set -> delete (editor)
+- `POST /assessments` - create assessment; creator becomes owner.
+- `GET /assessments` - list assessments visible to current user, with summary.
+- `GET /assessments/{id}` - get assessment.
+- `PATCH /assessments/{id}` - update name/description.
+- `DELETE /assessments/{id}` - delete assessment.
+- `GET /assessments/{id}/metadata`
+- `PUT /assessments/{id}/metadata`
+- `GET /assessments/{id}/metadata/{key}`
+- `PUT /assessments/{id}/metadata/{key}`
+- `DELETE /assessments/{id}/metadata/{key}`
 
-- Rubrics
-  - GET /assessments/{id}/rubric -> get (member)
-  - POST /assessments/{id}/rubric/export -> export (member)
-  - PUT /assessments/{id}/rubric -> set by model (editor)
-  - PUT /assessments/{id}/rubric/upload -> set by raw data (editor)
-  - PUT /assessments/{id}/rubric/import -> import via adapter (editor)
-  - POST /assessments/{id}/rubric/empty -> initialize an empty rubric (editor)
-  - POST /assessments/{id}/rubric/staleness/acknowledge -> acknowledge rubric staleness (editor)
-  - POST /assessments/{id}/rubric/validate -> validate (member)
-  - POST /assessments/{id}/rubric/sync -> sync rubric to the current question set (editor)
-  - GET /assessments/{id}/rubric/overview -> overview and coverage by question (member)
-  - DELETE /assessments/{id}/rubric -> delete (editor)
+### Memberships
 
-- Rules
-  - GET /assessments/{id}/rules -> list stored rules (member)
-  - POST /assessments/{id}/rules -> create rule (editor; server assigns ids)
-  - GET /assessments/{id}/rules/list?question_id={qid}&path={path} -> compatible rule types for a global, question, or nested context (member)
-  - GET /assessments/{id}/rules/schema?type={rule_type}&question_id={qid}&path={path} -> contextual JSON Schema and initial value (member)
-  - GET /assessments/{id}/rules/{rule_id} -> get rule (member)
-  - PUT /assessments/{id}/rules/{rule_id} -> update rule (editor)
-  - DELETE /assessments/{id}/rules/{rule_id} -> delete rule (editor)
+- `GET /assessments/{id}/members`
+- `POST /assessments/{id}/members` - add by email; role defaults to viewer.
+- `PATCH /assessments/{id}/members/{user_id}`
+- `DELETE /assessments/{id}/members/{user_id}`
 
-- Submissions
-  - PUT /assessments/{id}/submissions/source -> upload raw CSV source data (editor)
-  - GET /assessments/{id}/submissions/source -> get source data (member)
-  - PUT /assessments/{id}/submissions/config -> save import config (editor)
-  - GET /assessments/{id}/submissions/config -> get import config (member)
-  - GET /assessments/{id}/submissions -> get parsed submissions (member)
-  - DELETE /assessments/{id}/submissions -> delete source data and config (editor)
+### Submissions
 
-- Grading
-  - GET /assessments/{id}/grading -> get graded results (member)
-  - GET /assessments/{id}/grading/job -> get current run job (member)
-  - DELETE /assessments/{id}/grading/job -> cancel current run job (editor)
-  - POST /assessments/{id}/grading -> run grading (editor) -> GradingJob
-  - POST /assessments/{id}/grading/adjust -> adjust a single result (editor)
-  - POST /assessments/{id}/grading/bulk-adjust -> adjust multiple results (editor)
-  - POST /assessments/{id}/grading/download -> download graded output (member)
-  - DELETE /assessments/{id}/grading -> delete graded state (editor)
-  - POST /assessments/{id}/grading/preview -> run preview (member) -> GradingJob
-  - GET /assessments/{id}/grading/preview -> get preview results (member)
-  - GET /assessments/{id}/grading/preview/job -> get preview job (member)
-  - DELETE /assessments/{id}/grading/preview/job -> cancel preview job (member)
+- `PUT /assessments/{id}/submissions/source` - upload CSV source data.
+- `GET /assessments/{id}/submissions/source` - preview stored CSV rows.
+- `PUT /assessments/{id}/submissions/config` - set `answer_columns` and `point_columns`.
+- `GET /assessments/{id}/submissions/config`
+- `GET /assessments/{id}/submissions` - derive raw submissions from source/config.
+- `DELETE /assessments/{id}/submissions`
 
-- Jobs
-  - GET /jobs/{job_id} -> get job status -> JobStatusResponse
-  - POST /jobs/callback/{token} -> executor callback (internal) -> 204
+### Question Sets
 
-### Staleness Tracking
+- `GET /assessments/{id}/question-set`
+- `GET /assessments/{id}/question-set/status` - status plus drift.
+- `POST /assessments/{id}/question-set/sync`
+- `POST /assessments/{id}/question-set/staleness/acknowledge`
+- `POST /assessments/{id}/question-set/export`
+- `PUT /assessments/{id}/question-set` - set by model.
+- `PUT /assessments/{id}/question-set/upload` - load serialized data.
+- `PUT /assessments/{id}/question-set/import` - load through an adapter.
+- `POST /assessments/{id}/question-set/infer`
+- `POST /assessments/{id}/question-set/parse`
+- `DELETE /assessments/{id}/question-set`
+- `POST /assessments/{id}/question-set/questions`
+- `GET /assessments/{id}/question-set/questions/{question_id}`
+- `PUT /assessments/{id}/question-set/questions/{question_id}`
+- `DELETE /assessments/{id}/question-set/questions/{question_id}`
 
-Each assessment tracks fine-grained `updated_at` timestamps for source data, question set, rubric, and grading results. The `SectionStatus` model (included in question set, rubric, and grading responses) contains an `updated_at` timestamp and an `is_stale` flag. Staleness cascades through the pipeline: if source data is updated after the question set, the question set is marked stale; if the question set is stale or updated after the rubric, the rubric is marked stale; and if the rubric is stale or updated after the grading results, the results are marked stale. This lets the frontend prompt users to re-run downstream steps when upstream data changes.
+### Rubrics And Rules
 
-### Rule Schema Endpoints
+- `GET /assessments/{id}/rubric`
+- `POST /assessments/{id}/rubric/export`
+- `PUT /assessments/{id}/rubric`
+- `PUT /assessments/{id}/rubric/upload`
+- `PUT /assessments/{id}/rubric/import`
+- `POST /assessments/{id}/rubric/empty`
+- `POST /assessments/{id}/rubric/staleness/acknowledge`
+- `POST /assessments/{id}/rubric/validate`
+- `POST /assessments/{id}/rubric/sync`
+- `POST /assessments/{id}/rubric/repair`
+- `GET /assessments/{id}/rubric/overview`
+- `DELETE /assessments/{id}/rubric`
+- `GET /assessments/{id}/rules`
+- `POST /assessments/{id}/rules`
+- `GET /assessments/{id}/rules/list?question_id={qid}&path={path}`
+- `GET /assessments/{id}/rules/schema?type={rule_type}&question_id={qid}&path={path}`
+- `GET /assessments/{id}/rules/{rule_id}`
+- `PUT /assessments/{id}/rules/{rule_id}`
+- `DELETE /assessments/{id}/rules/{rule_id}`
 
-Rule endpoints keep the backend thin. The backend loads the assessment question set and submissions, builds an engine `RuleContext`, and delegates compatibility and schema generation to `gradeflow_engine.rules.schema`.
+### Grading And Jobs
 
-- Omit `question_id` to request global rules.
-- Provide `question_id` to request rules for a question.
-- Provide `path` to request schemas for nested rule fields or multi-valued value slots.
-- Schema responses include JSON Schema and an `initial_value`; they do not include backend-owned UI schemas.
-- Clients should use standard JSON Schema fields plus engine-owned `x-gradeflow` metadata.
+- `GET /assessments/{id}/grading`
+- `POST /assessments/{id}/grading` - submit full grading run.
+- `GET /assessments/{id}/grading/job`
+- `DELETE /assessments/{id}/grading/job`
+- `POST /assessments/{id}/grading/adjust`
+- `POST /assessments/{id}/grading/bulk-adjust`
+- `POST /assessments/{id}/grading/download`
+- `DELETE /assessments/{id}/grading`
+- `POST /assessments/{id}/grading/preview` - submit preview job.
+- `GET /assessments/{id}/grading/preview` - read and clear cached preview result.
+- `GET /assessments/{id}/grading/preview/job`
+- `DELETE /assessments/{id}/grading/preview/job`
+- `GET /jobs/{job_id}`
+- `POST /jobs/callback/{token}` - internal signed executor callback.
 
-### Response/Request Models
+Preview requests accept an optional single `rule` and a `config`:
 
-See `gradeflow_backend/schemas/` for Pydantic models. Notable external models from GradeFlow Engine:
-- `QuestionSet`
-- `Rubric`
-- `RawSubmission`, `Submission`
-- `RuleValidationError`
-- `SubmissionsSerializerConfig` (discriminated union for CSV / JSON / YAML output)
+```json
+{
+  "rule": null,
+  "config": {
+    "limit": 5,
+    "selection": "random_unique",
+    "seed": 123
+  }
+}
+```
 
-Key backend schemas:
-- `AdjustableQuestionResult` — `QuestionResult` extended with `adjusted_points` / `adjusted_feedback`
-- `AdjustableSubmission` — `Submission` with `result_map` typed as `dict[QuestionId, AdjustableQuestionResult]`
-- `GradingRunRequest` — `remove_adjustments` (default `false`) to clear manual adjustments on re-grade, and `override_results` (default `true`) to control whether rule results overwrite pre-existing points
-- `GradingResponse` — wraps `submissions: list[AdjustableSubmission]` and a `SectionStatus`
-- `GradingDownloadRequest` — `serializer: SubmissionsSerializerConfig` to choose output format (CSV / JSON / YAML)
-- `GradingDownloadResponse` — `filename`, `data` (bytes), `extension`, and `media_type`
-- `GradeAdjustmentRequest` — targets a single `(student_id, question_id)` pair with optional `adjusted_points` / `adjusted_feedback`
-- `BulkGradeAdjustmentRequest` — list of `GradeAdjustmentRequest` items (min 1)
-- `BulkGradeAdjustmentResponse` — `applied` count, `errors` list, and updated `result`
-- `GradingLimitConfig` — `limit`, `selection` (`first` | `random`), and optional `seed` for preview runs
-- `GradingPreviewRequest` — optional single `rule` and a `GradingLimitConfig`
-- `GradingJob` — returned by run / preview; contains `job_id`, `status`, `finished_at`, and a polling `url`
-- `JobStatusResponse` — `job_id`, `status` (`queued` | `running` | `completed` | `failed`), `finished_at`, elapsed `duration_seconds`, and optional `error`
-- `ExportQuestionSetRequest` / `ExportQuestionSetResponse` — serializer config and exported file data
-- `ExportRubricRequest` / `ExportRubricResponse` — serializer config and exported file data
-- `RulesResponse` — stored rubric rules plus section status
-- `RuleTypeOption` / `CompatibleRulesResponse` — compatible rule type, label, and description options for a context
-- `RuleSchemaResponse` — contextual rule JSON Schema and initial value
-- `RubricOverviewResponse` — rubric coverage and per-question rule overview
-- `SourceDataResponse` — parsed `headers`, `rows`, `total_rows`, and `student_id_column` for the uploaded CSV
-- `SubmissionsImportConfig` — optional `answer_columns` list and optional `point_columns` mapping (`question_id` -> CSV column name)
-- `SectionStatus` — `updated_at` timestamp and `is_stale` flag, included in question set, rubric, and grading responses
+`selection` can be `first`, `random`, or `random_unique`. Preview jobs do not
+persist grading results; they store a short-lived Valkey result that is consumed
+by `GET /grading/preview`.
 
-## Example Workflow (cURL)
+## Error Format
 
-This example assumes you have a Zitadel instance configured and have obtained an access token via the Zitadel OAuth2 flow (Authorization Code or Device Authorization grant).
+Errors use a consistent JSON shape:
+
+```json
+{
+  "code": "VALIDATION_ERROR",
+  "message": "Request validation failed",
+  "errors": ["Question id is required."]
+}
+```
+
+Backend `AppError`s, FastAPI/Starlette HTTP errors, request validation errors,
+Pydantic validation errors, and GradeFlow Engine errors are all normalized into
+this contract.
+
+## Example Workflow
+
+This example assumes you already have a Zitadel access token.
 
 ```bash
-# 1) Obtain an access token from your Zitadel instance.
-#    Use the Authorization Code flow, Device Authorization flow, or
-#    Zitadel's built-in token endpoint with a service user.
-#    See: https://zitadel.com/docs/guides/integrate/login
 ACCESS="<your_zitadel_access_token>"
 
-# 2) Verify your identity
-curl -s http://localhost:8000/users/me \
-  -H "Authorization: Bearer $ACCESS"
-
-# 3) Create assessment (auth required; creator becomes owner)
 curl -s -X POST http://localhost:8000/assessments \
   -H "Authorization: Bearer $ACCESS" \
   -H "Content-Type: application/json" \
-  -d '{"name":"Midterm"}'
+  -d '{"name":"Midterm","description":"Spring exam"}'
 
-# Export ASSESSMENT_ID from the response
-ASSESSMENT_ID="<id>"
+ASSESSMENT_ID="<id-from-response>"
 
-# 4) Upload question set (raw YAML)
-curl -s -X PUT http://localhost:8000/assessments/$ASSESSMENT_ID/question-set/upload \
-  -H "Authorization: Bearer $ACCESS" \
-  -H "Content-Type: application/json" \
-  -d '{"data":"question_map:\n  q1:\n    type: TEXT\n  q2:\n    type: NUMERIC\n","serializer":{"format":"yaml"}}'
-
-# 5) Upload rubric (raw YAML)
-curl -s -X PUT http://localhost:8000/assessments/$ASSESSMENT_ID/rubric/upload \
-  -H "Authorization: Bearer $ACCESS" \
-  -H "Content-Type: application/json" \
-  -d '{"data":"rules:\n  - type: TEXT_MATCH\n    question_id: q1\n    answers: [\"Alice\"]\n  - type: NUMERIC_RANGE\n    question_id: q2\n    min_value: 0\n    max_value: 100\n","serializer":{"format":"yaml"}}'
-
-# 6a) Upload raw CSV source data
 curl -s -X PUT http://localhost:8000/assessments/$ASSESSMENT_ID/submissions/source \
   -H "Authorization: Bearer $ACCESS" \
   -H "Content-Type: application/json" \
   -d '{"data":"student_id,q1,q2\ns1,Alice,90\ns2,Bob,76\n","student_id_column":"student_id"}'
 
-# 6b) (Optional) save import config
-curl -s -X PUT http://localhost:8000/assessments/$ASSESSMENT_ID/submissions/config \
+curl -s -X POST http://localhost:8000/assessments/$ASSESSMENT_ID/question-set/infer \
   -H "Authorization: Bearer $ACCESS" \
   -H "Content-Type: application/json" \
-  -d '{"answer_columns":["q1","q2"]}'
+  -d '{"commit":true}'
 
-# 7) Run grading
+curl -s -X PUT http://localhost:8000/assessments/$ASSESSMENT_ID/rubric/upload \
+  -H "Authorization: Bearer $ACCESS" \
+  -H "Content-Type: application/json" \
+  -d '{"serializer":{"format":"yaml"},"data":"rules:\n  - type: MULTIPLE_CHOICE\n    question_id: q1\n    answer: [\"alice\"]\n    mode: ALL\n  - type: NUMERIC_RANGE\n    question_id: q2\n    min_value: 0\n    max_value: 100\n"}'
+
 curl -s -X POST http://localhost:8000/assessments/$ASSESSMENT_ID/grading \
   -H "Authorization: Bearer $ACCESS" \
   -H "Content-Type: application/json" \
-  -d '{}'
+  -d '{"remove_adjustments":false,"override_results":true}'
 
-# Export JOB_ID from the response
-JOB_ID="<job_id>"
+JOB_ID="<job-id-from-response>"
 
-# 8) Poll job status
 curl -s http://localhost:8000/jobs/$JOB_ID \
   -H "Authorization: Bearer $ACCESS"
 
-# 9) Get graded results
 curl -s http://localhost:8000/assessments/$ASSESSMENT_ID/grading \
   -H "Authorization: Bearer $ACCESS"
 
-# 10) Download graded output (CSV)
 curl -s -X POST http://localhost:8000/assessments/$ASSESSMENT_ID/grading/download \
   -H "Authorization: Bearer $ACCESS" \
   -H "Content-Type: application/json" \
@@ -354,26 +439,15 @@ curl -s -X POST http://localhost:8000/assessments/$ASSESSMENT_ID/grading/downloa
 
 ## Development
 
-### Formatting and Linting
-
 ```bash
 ruff format .
 ruff check .
-```
-
-### Type Checking
-
-```bash
 mypy gradeflow_backend
-```
-
-### Tests
-
-```bash
 pytest --cov=gradeflow_backend --cov-report=term --cov-report=xml
 ```
 
-Pytest creates a temporary SQLite database per test function via fixtures and overrides the FastAPI dependency injection for sessions. To run against a real database, set `DATABASE__URL` in your environment before running pytest.
+Tests use a per-test SQLite database by default and fake Valkey. Set `DB_URL`
+to run the test fixtures against a different database.
 
 ## License
 

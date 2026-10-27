@@ -162,7 +162,7 @@ question_map:
     type: CHOICE
     max_points: 3.0
     options:
-      - A
+      A: "First answer"
     allow_multiple: false
     config:
       delimiter: ","
@@ -197,7 +197,7 @@ question_map:
 
     q2 = question_map["q2"]
     assert isinstance(q2, ChoiceQuestion)
-    assert q2.options == {"A", "B", "C"}
+    assert q2.options == {"A": "First answer", "B": None, "C": None}
     assert q2.allow_multiple is False
     assert q2.max_points == 3.0
     assert synced.status.is_stale is False
@@ -205,3 +205,27 @@ question_map:
     refreshed_status = api.get_question_set_status(created.id)
     assert refreshed_status.status.is_stale is False
     assert refreshed_status.drift.has_drift is False
+
+
+def test_choice_option_text_round_trip(api: ApiClient) -> None:
+    created = api.create_assessment("Choice option text")
+    api.create_question(
+        created.id,
+        "q1",
+        {"type": "CHOICE", "options": {" A ": " First answer ", "B": None}},
+    )
+
+    got = api.try_get_question(created.id, "q1")
+    assert got.status_code == 200, got.text
+    assert got.json()["options"] == {"A": "First answer", "B": None}
+
+    api.update_question(
+        created.id,
+        "q1",
+        {"type": "CHOICE", "options": {"A": "Updated answer", "B": None}},
+    )
+    exported = api.export_question_set(created.id)
+    reloaded = api.set_question_set_yaml(created.id, exported.data.decode("utf-8"))
+    question = reloaded.question_set.question_map["q1"]
+    assert isinstance(question, ChoiceQuestion)
+    assert question.options == {"A": "Updated answer", "B": None}
